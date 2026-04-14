@@ -24,6 +24,11 @@ type ParkOption = {
   name: string
 }
 
+type StaffScopeRow = {
+  role: string | null
+  park_id: string | null
+}
+
 const PAGE_SIZE = 200
 const LOAD_ALL_BATCH_SIZE = 1000
 
@@ -53,6 +58,13 @@ export default function MembersPage() {
   const [hasMore, setHasMore] = useState(true)
   const [loadedAll, setLoadedAll] = useState(false)
 
+  const [staffRole, setStaffRole] = useState('')
+  const [staffParkId, setStaffParkId] = useState<string | null>(null)
+  const [staffScopeLoading, setStaffScopeLoading] = useState(true)
+
+  const isAdminOrSupervisor =
+    staffRole === 'ADMIN' || staffRole === 'SUPERVISOR'
+
   useEffect(() => {
     if (!staffLoading && !staff) {
       window.location.href = '/login'
@@ -66,6 +78,49 @@ export default function MembersPage() {
 
     return () => clearTimeout(timeout)
   }, [searchInput])
+
+  const openMember = useCallback((memberCode: string | null) => {
+    if (!memberCode) return
+    window.location.href = `/members/${memberCode}`
+  }, [])
+
+  const loadStaffScope = useCallback(async () => {
+    if (!staff?.staff_code) {
+      setStaffRole('')
+      setStaffParkId(null)
+      setStaffScopeLoading(false)
+      return
+    }
+
+    setStaffScopeLoading(true)
+
+    const { data, error } = await supabase
+      .from('staff')
+      .select('role, park_id')
+      .eq('staff_code', staff.staff_code)
+      .eq('is_active', true)
+      .maybeSingle()
+
+    if (error || !data) {
+      setStaffRole('')
+      setStaffParkId(null)
+      setStaffScopeLoading(false)
+      return
+    }
+
+    const scope = data as StaffScopeRow
+    const role = String(scope.role || '').toUpperCase()
+    const parkId = scope.park_id || null
+
+    setStaffRole(role)
+    setStaffParkId(parkId)
+
+    if (role !== 'ADMIN' && role !== 'SUPERVISOR' && parkId) {
+      setSelectedPark(parkId)
+    }
+
+    setStaffScopeLoading(false)
+  }, [staff])
 
   const loadParks = useCallback(async () => {
     const { data, error } = await supabase
@@ -94,7 +149,9 @@ export default function MembersPage() {
       )
     }
 
-    if (selectedPark !== 'ALL') {
+    if (!isAdminOrSupervisor && staffParkId) {
+      query = query.eq('main_park_id', staffParkId)
+    } else if (selectedPark !== 'ALL') {
       query = query.eq('main_park_id', selectedPark)
     }
 
@@ -103,7 +160,7 @@ export default function MembersPage() {
     }
 
     return query
-  }, [search, selectedPark, selectedStatus])
+  }, [search, selectedPark, selectedStatus, isAdminOrSupervisor, staffParkId])
 
   const normalizeRows = useCallback((data: MemberRow[] | null | undefined) => {
     return ((data || []) as MemberRow[]).map((row) => ({
@@ -225,18 +282,32 @@ export default function MembersPage() {
 
   useEffect(() => {
     if (!staffLoading && staff) {
+      loadStaffScope()
+    }
+  }, [staffLoading, staff, loadStaffScope])
+
+  useEffect(() => {
+    if (!staffLoading && staff) {
       loadParks()
     }
   }, [staffLoading, staff, loadParks])
 
   useEffect(() => {
-    if (!staffLoading && staff) {
+    if (!staffLoading && !staffScopeLoading && staff) {
       setPage(0)
       setHasMore(true)
       setLoadedAll(false)
       loadMembersPage(0, true)
     }
-  }, [staffLoading, staff, search, selectedPark, selectedStatus, loadMembersPage])
+  }, [
+    staffLoading,
+    staffScopeLoading,
+    staff,
+    search,
+    selectedPark,
+    selectedStatus,
+    loadMembersPage,
+  ])
 
   const totals = useMemo(() => {
     return {
@@ -257,11 +328,15 @@ export default function MembersPage() {
   }, [rows])
 
   const statuses = useMemo(() => {
-    const fixedStatuses = ['ACTIVE', 'INACTIVE']
-    return fixedStatuses
+    return ['ACTIVE', 'INACTIVE']
   }, [])
 
-  if (staffLoading) {
+  const assignedParkName = useMemo(() => {
+    if (!staffParkId) return 'Assigned Park'
+    return parks.find((park) => park.id === staffParkId)?.name || 'Assigned Park'
+  }, [parks, staffParkId])
+
+  if (staffLoading || staffScopeLoading) {
     return (
       <main style={styles.page}>
         <div style={styles.pageInner}>
@@ -280,7 +355,9 @@ export default function MembersPage() {
           <div style={styles.headerTextWrap}>
             <h1 style={styles.title}>Members Directory</h1>
             <p style={styles.subtitle}>
-              View all customers, filter by park, and check balances in one place
+              {isAdminOrSupervisor
+                ? 'View all customers, filter by park, and check balances in one place'
+                : 'View customers in your assigned park and check balances'}
             </p>
           </div>
         </div>
@@ -297,21 +374,32 @@ export default function MembersPage() {
               />
             </div>
 
-            <div style={styles.fieldBox}>
-              <label style={styles.label}>Park</label>
-              <select
-                value={selectedPark}
-                onChange={(e) => setSelectedPark(e.target.value)}
-                style={styles.input}
-              >
-                <option value="ALL">All Parks</option>
-                {parks.map((park) => (
-                  <option key={park.id} value={park.id}>
-                    {park.name}
-                  </option>
-                ))}
-              </select>
-            </div>
+            {isAdminOrSupervisor ? (
+              <div style={styles.fieldBox}>
+                <label style={styles.label}>Park</label>
+                <select
+                  value={selectedPark}
+                  onChange={(e) => setSelectedPark(e.target.value)}
+                  style={styles.input}
+                >
+                  <option value="ALL">All Parks</option>
+                  {parks.map((park) => (
+                    <option key={park.id} value={park.id}>
+                      {park.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              <div style={styles.fieldBox}>
+                <label style={styles.label}>Park</label>
+                <input
+                  value={assignedParkName}
+                  readOnly
+                  style={{ ...styles.input, background: '#f8f5fd' }}
+                />
+              </div>
+            )}
 
             <div style={styles.fieldBox}>
               <label style={styles.label}>Status</label>
@@ -421,7 +509,16 @@ export default function MembersPage() {
                   <div key={row.member_id} style={styles.memberCard}>
                     <div style={styles.memberTop}>
                       <div>
-                        <div style={styles.memberName}>{row.full_name || '-'}</div>
+                        <div
+                          style={{
+                            ...styles.memberName,
+                            ...(row.member_code ? styles.memberLinkText : {}),
+                          }}
+                          onClick={() => openMember(row.member_code)}
+                        >
+                          {row.full_name || '-'}
+                        </div>
+
                         <div style={styles.memberMeta}>
                           {row.member_code || '-'} • {row.park_name || '-'}
                         </div>
@@ -674,6 +771,11 @@ const styles: Record<string, CSSProperties> = {
     fontSize: '16px',
     fontWeight: 800,
     color: '#2d1b69',
+  },
+  memberLinkText: {
+    textDecoration: 'underline',
+    cursor: 'pointer',
+    color: '#4b2e83',
   },
   memberMeta: {
     marginTop: '4px',
