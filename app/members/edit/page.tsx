@@ -26,6 +26,14 @@ type UpdateResultRow = {
   message: string
 }
 
+type DeleteResultRow = {
+  success: boolean
+  message: string
+  deleted_member_id: string | null
+  deleted_member_code: string | null
+  deleted_member_name: string | null
+}
+
 export default function EditMembersPage() {
   const { staff, loading: staffLoading } = useCurrentStaff()
 
@@ -42,6 +50,8 @@ export default function EditMembersPage() {
   const [status, setStatus] = useState('ACTIVE')
 
   const [saving, setSaving] = useState(false)
+  const [deletingMemberId, setDeletingMemberId] = useState<string | null>(null)
+
   const [errorText, setErrorText] = useState('')
   const [successText, setSuccessText] = useState('')
   const [changeReason, setChangeReason] = useState('')
@@ -182,17 +192,17 @@ export default function EditMembersPage() {
     setSuccessText('')
 
     const { data, error } = await supabase.rpc('admin_supervisor_update_member_details', {
-  p_requesting_staff_code: staff.staff_code,
-  p_member_id: selectedMember.id,
-  p_full_name: fullName,
-  p_phone: phone,
-  p_park_id: parkId || null,
-  p_specific_park: specificPark || null,
-  p_status: status,
-  p_change_reason: changeReason || null,
-})
+      p_requesting_staff_code: staff.staff_code,
+      p_member_id: selectedMember.id,
+      p_full_name: fullName,
+      p_phone: phone,
+      p_park_id: parkId || null,
+      p_specific_park: specificPark || null,
+      p_status: status,
+      p_change_reason: changeReason || null,
+    })
 
-setChangeReason('')
+    setChangeReason('')
 
     if (error) {
       setErrorText(error.message || 'Failed to update member.')
@@ -224,6 +234,71 @@ setChangeReason('')
     setSuccessText(result.message || 'Member updated successfully.')
     setSearch(`${updatedMember.full_name} (${updatedMember.member_code})`)
     setSaving(false)
+  }
+
+  async function handleDeleteDuplicateMember(member: MemberSearchRow) {
+    if (!staff?.staff_code) {
+      setErrorText('No logged in staff found.')
+      return
+    }
+
+    setErrorText('')
+    setSuccessText('')
+
+    const pin = window.prompt(`Enter your PIN to delete ${member.full_name || 'this member'}:`)
+    if (!pin) return
+
+    const reason = window.prompt('Enter reason for deleting this duplicate member:')
+    if (!reason || !reason.trim()) {
+      setErrorText('Delete reason is required.')
+      return
+    }
+
+    const confirmed = window.confirm(
+      `Are you sure you want to delete ${member.full_name || 'this member'} (${member.member_code})?\n\nThis should only be used for duplicate members with no transaction, loan, or savings history.`
+    )
+    if (!confirmed) return
+
+    try {
+      setDeletingMemberId(member.id)
+
+      const { data, error } = await supabase.rpc('delete_duplicate_member', {
+        p_requesting_staff_code: staff.staff_code,
+        p_member_id: member.id,
+        p_login_pin: pin,
+        p_reason: reason.trim(),
+      })
+
+      if (error) {
+        setErrorText(error.message || 'Failed to delete member.')
+        return
+      }
+
+      const result = data?.[0] as DeleteResultRow | undefined
+
+      if (!result?.success) {
+        setErrorText(result?.message || 'Delete failed.')
+        return
+      }
+
+      setSuccessText(result.message || 'Duplicate member deleted successfully.')
+
+      if (selectedMember?.id === member.id) {
+        clearSelectedMember()
+      }
+
+      setMemberResults((prev) => prev.filter((row) => row.id !== member.id))
+
+      const q = search.trim()
+      if (q && selectedMember?.id !== member.id) {
+        setSearch(q)
+      }
+    } catch (err) {
+      console.error(err)
+      setErrorText('Something went wrong while deleting member.')
+    } finally {
+      setDeletingMemberId(null)
+    }
   }
 
   if (staffLoading) {
@@ -290,20 +365,23 @@ setChangeReason('')
             {!selectedMember && memberResults.length > 0 ? (
               <div style={styles.searchResultsBox}>
                 {memberResults.map((member) => (
-                  <button
-                    key={member.id}
-                    type="button"
-                    style={styles.searchResultItem}
-                    onClick={() => selectMember(member)}
-                  >
-                    <div style={styles.resultTitleRow}>
-                      <strong>{member.full_name}</strong>
-                      <span style={styles.mutedText}>({member.member_code})</span>
-                    </div>
-                    <div style={styles.smallText}>Phone: {member.phone || '-'}</div>
-                    <div style={styles.smallText}>Park: {member.park_name || '-'}</div>
-                    <div style={styles.smallText}>Status: {member.status || '-'}</div>
-                  </button>
+                  <div key={member.id} style={styles.searchResultRow}>
+                    <button
+                      type="button"
+                      style={styles.searchResultItem}
+                      onClick={() => selectMember(member)}
+                    >
+                      <div style={styles.resultTitleRow}>
+                        <strong>{member.full_name}</strong>
+                        <span style={styles.mutedText}>({member.member_code})</span>
+                      </div>
+                      <div style={styles.smallText}>Phone: {member.phone || '-'}</div>
+                      <div style={styles.smallText}>Park: {member.park_name || '-'}</div>
+                      <div style={styles.smallText}>Status: {member.status || '-'}</div>
+                    </button>
+
+                    
+                  </div>
                 ))}
               </div>
             ) : null}
@@ -314,9 +392,24 @@ setChangeReason('')
           <section style={styles.card}>
             <div style={styles.sectionHeader}>
               <h2 style={styles.sectionTitle}>Selected Member</h2>
-              <button type="button" style={styles.secondaryButton} onClick={clearSelectedMember}>
-                Change Member
-              </button>
+
+              <div style={styles.actionGroup}>
+                <button type="button" style={styles.secondaryButton} onClick={clearSelectedMember}>
+                  Change Member
+                </button>
+
+                <button
+                  type="button"
+                  style={{
+                    ...styles.deleteButton,
+                    ...(deletingMemberId === selectedMember.id ? styles.deleteButtonDisabled : {}),
+                  }}
+                  onClick={() => handleDeleteDuplicateMember(selectedMember)}
+                  disabled={deletingMemberId === selectedMember.id}
+                >
+                  {deletingMemberId === selectedMember.id ? 'Deleting...' : 'Delete Duplicate'}
+                </button>
+              </div>
             </div>
 
             <div style={styles.selectedMemberCard}>
@@ -390,14 +483,14 @@ setChangeReason('')
               </div>
 
               <div style={styles.field}>
-  <label style={styles.label}>Change Reason</label>
-  <input
-    style={styles.input}
-    value={changeReason}
-    onChange={(e) => setChangeReason(e.target.value)}
-    placeholder="e.g. Corrected phone, park transfer, typo fix"
-  />
-</div>
+                <label style={styles.label}>Change Reason</label>
+                <input
+                  style={styles.input}
+                  value={changeReason}
+                  onChange={(e) => setChangeReason(e.target.value)}
+                  placeholder="e.g. Corrected phone, park transfer, typo fix"
+                />
+              </div>
             </div>
 
             <div style={styles.buttonRow}>
@@ -530,12 +623,20 @@ const styles: Record<string, CSSProperties> = {
     maxHeight: '320px',
     overflowY: 'auto',
   },
+  searchResultRow: {
+    display: 'flex',
+    gap: '10px',
+    alignItems: 'stretch',
+    padding: '10px 12px',
+    borderBottom: '1px solid #f0ebf9',
+    background: '#fff',
+  },
   searchResultItem: {
-    width: '100%',
+    flex: 1,
     textAlign: 'left',
     padding: '12px 14px',
-    border: 'none',
-    borderBottom: '1px solid #f0ebf9',
+    border: '1px solid #f0ebf9',
+    borderRadius: '12px',
     background: '#fff',
     cursor: 'pointer',
   },
@@ -578,6 +679,12 @@ const styles: Record<string, CSSProperties> = {
     flexWrap: 'wrap',
     marginTop: '18px',
   },
+  actionGroup: {
+    display: 'flex',
+    gap: '10px',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+  },
   primaryButton: {
     padding: '12px 16px',
     borderRadius: '12px',
@@ -595,6 +702,21 @@ const styles: Record<string, CSSProperties> = {
     color: '#4b2e83',
     fontWeight: 800,
     cursor: 'pointer',
+  },
+  deleteButton: {
+    padding: '12px 16px',
+    borderRadius: '12px',
+    border: '1px solid #dc2626',
+    background: '#dc2626',
+    color: '#fff',
+    fontWeight: 800,
+    cursor: 'pointer',
+    whiteSpace: 'nowrap',
+  },
+  deleteButtonDisabled: {
+    background: '#f3a6a6',
+    border: '1px solid #f3a6a6',
+    cursor: 'not-allowed',
   },
   noteText: {
     color: '#6b6480',
