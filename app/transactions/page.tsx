@@ -189,22 +189,24 @@ export default function TransactionsPage() {
   }, [filteredRows, effectiveRows])
 
   function canReverse(row: TransactionRow) {
-    if (!canSeeAllTransactions) return false
-    if (row.tx_type === 'REVERSAL') return false
-    if (String(row.correction_reason || '').trim()) return false
+  if (!canSeeAllTransactions) return false
+  if (row.tx_type === 'REVERSAL') return false
+  if (String(row.correction_reason || '').trim()) return false
 
-    if (row.tx_type === 'LOAN_REPAYMENT') return true
-    if (row.tx_type === 'SAVINGS_DEPOSIT') return true
+  if (row.tx_type === 'LOAN_REPAYMENT') return true
+  if (row.tx_type === 'SAVINGS_DEPOSIT') return true
+  if (row.tx_type === 'REMITTANCE') return true
+  if (row.tx_type === 'LOAN_DISBURSEMENT') return true
 
-    if (
-      row.tx_type === 'FEE' &&
-      ['CARD_FEE', 'PROCESSING_FEE', 'MEMBERSHIP_FEE'].includes(row.sub_type || '')
-    ) {
-      return true
-    }
-
-    return false
+  if (
+    row.tx_type === 'FEE' &&
+    ['CARD_FEE', 'PROCESSING_FEE', 'MEMBERSHIP_FEE'].includes(row.sub_type || '')
+  ) {
+    return true
   }
+
+  return false
+}
 
   async function handleReverseSubmit() {
     if (!staff || !selectedTx) return

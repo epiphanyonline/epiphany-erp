@@ -108,6 +108,7 @@ export default function RootLayout({
     { href: '/repayments', label: 'Repayment', show: true },
     { href: '/savings/deposit', label: 'Deposit', show: true },
     { href: '/savings/withdrawal', label: 'Withdraw', show: !!canWithdrawSavings },
+    { href: '/disbursement-schedule', label: 'Disb. Schedule', show: true },
 
     // 👇 COLLECTIONS / MONITORING
     { href: '/collections', label: 'Collections', show: true },
@@ -130,6 +131,8 @@ export default function RootLayout({
     { href: '/bulk-upload', label: 'Bulk Upload', show: isSupervisor },
     { href: '/bulk-membership', label: 'Bulk Members', show: isSupervisor },
     { href: '/bulk-upload/exceptions', label: 'Upload Exceptions', show: isSupervisor },
+    { href: '/disbursement-approval', label: 'Disb. Approval', show: true },
+    { href: '/disbursement-schedule-history', label: 'Disb. History', show: true },
   ],
   [canDisburse, canWithdrawSavings, canUseSupervisorPages, isSupervisor]
 )
