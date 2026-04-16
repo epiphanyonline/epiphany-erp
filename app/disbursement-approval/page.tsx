@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useCurrentStaff } from '../../lib/useCurrentStaff'
+import jsPDF from 'jspdf'
+import autoTable from 'jspdf-autotable'
 
 type PendingLineRow = {
   id: string
@@ -202,6 +204,49 @@ export default function DisbursementApprovalPage() {
     setActionMessage('')
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
+
+  function handleDownloadPdf() {
+  const doc = new jsPDF('landscape', 'mm', 'a4')
+  const generatedAt = new Date().toLocaleString()
+
+  doc.setFontSize(18)
+  doc.text('Epiphany ERP - Pending Disbursement Schedule', 14, 15)
+
+  doc.setFontSize(10)
+  doc.text(`Generated: ${generatedAt}`, 14, 22)
+  doc.text(`Total Pending Lines: ${totals.count}`, 14, 28)
+  doc.text(`Total Requested: ${money(totals.totalRequested)}`, 14, 34)
+
+  const tableBody = filteredRows.map((row, index) => [
+    String(index + 1),
+    row.batch_ref || '-',
+    row.line_ref || '-',
+    row.business_date || '-',
+    row.requesting_staff_name || '-',
+    row.member_name_snapshot || '-',
+    row.member_code || '-',
+    money(row.proposed_amount),
+    `${row.tenure_days} days`,
+  ])
+
+  autoTable(doc, {
+    startY: 40,
+    head: [[
+      'S/N',
+      'Batch',
+      'Line',
+      'Date',
+      'Officer',
+      'Member',
+      'Code',
+      'Amount',
+      'Tenure',
+    ]],
+    body: tableBody,
+  })
+
+  doc.save(`pending-schedule-${new Date().toISOString().slice(0, 10)}.pdf`)
+}
 
   async function handleApprove() {
     if (!staff?.staff_code || !selectedLine) return
@@ -437,16 +482,32 @@ export default function DisbursementApprovalPage() {
 
         <section style={styles.card}>
           <div style={styles.sectionHeader}>
-            <h2 style={styles.sectionTitle}>Pending Schedule Lines</h2>
-            <button
-              type="button"
-              style={styles.secondaryButton}
-              onClick={loadPending}
-              disabled={loading}
-            >
-              {loading ? 'Refreshing...' : 'Refresh'}
-            </button>
-          </div>
+  <h2 style={styles.sectionTitle}>Pending Schedule Lines</h2>
+
+  <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+    <button
+  type="button"
+  style={{
+    ...styles.secondaryButton,
+    opacity: loading || !filteredRows.length ? 0.5 : 1,
+    cursor: loading || !filteredRows.length ? 'not-allowed' : 'pointer',
+  }}
+  onClick={handleDownloadPdf}
+  disabled={loading || !filteredRows.length}
+>
+  Download PDF
+</button>
+
+    <button
+      type="button"
+      style={styles.secondaryButton}
+      onClick={loadPending}
+      disabled={loading}
+    >
+      {loading ? 'Refreshing...' : 'Refresh'}
+    </button>
+  </div>
+</div>
 
           <div style={styles.filterGrid}>
             <div style={styles.fieldBox}>
