@@ -4,22 +4,15 @@ import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useCurrentStaff } from '../../lib/useCurrentStaff'
 
-type Loan = {
-  id: string
+type DailyCollectionBaseRow = {
+  loan_id: string
   member_id: string
-  principal_amount: number
-  outstanding_balance: number
-  tenure_days: number
-  expected_daily_amount: number | null
-  disbursed_at: string | null
-  due_date: string | null
-  status: string
-}
-
-type Member = {
-  id: string
   member_code: string
-  full_name: string
+  member_name: string
+  expected_daily_amount: number | null
+  outstanding_balance: number | null
+  due_date: string | null
+  loan_status: string | null
 }
 
 type RepaymentTransaction = {
@@ -85,12 +78,21 @@ function formatMoney(value: number) {
   return `₦${Number(value || 0).toLocaleString()}`
 }
 
+function chunkArray<T>(items: T[], size: number) {
+  const chunks: T[][] = []
+  for (let i = 0; i < items.length; i += size) {
+    chunks.push(items.slice(i, i + size))
+  }
+  return chunks
+}
+
 export default function CollectionsPage() {
   const { staff, loading: staffLoading } = useCurrentStaff()
 
   const [rows, setRows] = useState<CollectionRow[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const [errorText, setErrorText] = useState('')
 
   useEffect(() => {
     if (!staffLoading && !staff) {
@@ -103,79 +105,75 @@ export default function CollectionsPage() {
       if (!staff) return
 
       setLoading(true)
+      setErrorText('')
 
       const todayStr = getTodayDateString()
 
-      const { data: loansData, error: loansError } = await supabase
-        .from('loan_accounts')
+      const { data: baseData, error: baseError } = await supabase
+        .from('vw_daily_collections')
         .select(
-          'id, member_id, principal_amount, outstanding_balance, tenure_days, expected_daily_amount, disbursed_at, due_date, status'
+          'loan_id, member_id, member_code, member_name, expected_daily_amount, outstanding_balance, due_date, loan_status'
         )
-        .in('status', ['ACTIVE', 'OVERDUE'])
-        .gt('outstanding_balance', 0)
+        .order('member_name', { ascending: true })
 
-      console.log('loansData:', loansData)
-      console.log('loansError:', loansError)
+      console.log('baseData:', baseData)
+      console.log('baseError:', baseError)
 
-      if (!loansData || loansError) {
+      if (baseError || !baseData) {
         setRows([])
+        setErrorText(baseError?.message || 'Failed to load collection base data.')
         setLoading(false)
         return
       }
 
-      const loans = loansData as Loan[]
-      const memberIds = [...new Set(loans.map((loan) => loan.member_id))]
-      const loanIds = loans.map((loan) => loan.id)
-
-      const { data: membersData, error: membersError } = await supabase
-        .from('members')
-        .select('id, member_code, full_name')
-        .in('id', memberIds)
-
-      console.log('membersData:', membersData)
-      console.log('membersError:', membersError)
-
-      const { data: txData, error: txError } = await supabase
-        .from('vw_transaction_report')
-        .select('loan_account_id, amount, business_date, tx_type')
-        .eq('tx_type', 'LOAN_REPAYMENT')
-        .eq('business_date', todayStr)
-        .in('loan_account_id', loanIds)
-
-      console.log('txData:', txData)
-      console.log('txError:', txError)
-
-      const memberMap = new Map<string, Member>()
-      ;(membersData as Member[] | null)?.forEach((member) => {
-        memberMap.set(member.id, member)
-      })
-
+      const baseRows = (baseData || []) as DailyCollectionBaseRow[]
+      const loanIds = baseRows.map((row) => row.loan_id)
       const repaymentMap = new Map<string, number>()
-      ;(txData as RepaymentTransaction[] | null)?.forEach((tx) => {
-        if (!tx.loan_account_id) return
-        const current = repaymentMap.get(tx.loan_account_id) || 0
-        repaymentMap.set(tx.loan_account_id, current + Number(tx.amount || 0))
-      })
 
-      const result: CollectionRow[] = loans.map((loan) => {
-        const member = memberMap.get(loan.member_id)
-        const expected = Number(loan.expected_daily_amount || 0)
-        const actual = Number(repaymentMap.get(loan.id) || 0)
+      const loanIdChunks = chunkArray(loanIds, 100)
+
+      for (const chunk of loanIdChunks) {
+        const { data: txData, error: txError } = await supabase
+          .from('vw_transaction_report')
+          .select('loan_account_id, amount, business_date, tx_type')
+          .eq('tx_type', 'LOAN_REPAYMENT')
+          .eq('business_date', todayStr)
+          .in('loan_account_id', chunk)
+
+        console.log('txData chunk:', txData)
+        console.log('txError chunk:', txError)
+
+        if (txError) {
+          setErrorText(txError.message || 'Failed to load repayment transactions.')
+          continue
+        }
+
+        ;(txData as RepaymentTransaction[] | null)?.forEach((tx) => {
+          if (!tx.loan_account_id) return
+          const current = repaymentMap.get(tx.loan_account_id) || 0
+          repaymentMap.set(tx.loan_account_id, current + Number(tx.amount || 0))
+        })
+      }
+
+      const result: CollectionRow[] = baseRows.map((row) => {
+        const expected = Number(row.expected_daily_amount || 0)
+        const actual = Number(repaymentMap.get(row.loan_id) || 0)
         const variance = actual - expected
+        const outstandingBalance = Number(row.outstanding_balance || 0)
 
         return {
-          loan_id: loan.id,
-          member_id: loan.member_id,
-          member_code: member?.member_code || '-',
-          member_name: member?.full_name || 'Unknown Member',
+          loan_id: row.loan_id,
+          member_id: row.member_id,
+          member_code: row.member_code || '-',
+          member_name: row.member_name || 'Unknown Member',
           expected_daily_amount: expected,
           actual_paid_today: actual,
           variance,
-          outstanding_balance: Number(loan.outstanding_balance || 0),
-          due_date: loan.due_date,
+          outstanding_balance: outstandingBalance,
+          due_date: row.due_date,
           display_status: getCollectionStatus(
-            loan.due_date,
-            Number(loan.outstanding_balance || 0),
+            row.due_date,
+            outstandingBalance,
             expected,
             actual
           ),
@@ -186,7 +184,7 @@ export default function CollectionsPage() {
       setLoading(false)
     }
 
-    if (!staffLoading) {
+    if (!staffLoading && staff) {
       loadCollections()
     }
   }, [staffLoading, staff])
@@ -266,16 +264,12 @@ export default function CollectionsPage() {
 
           <div style={styles.statCard}>
             <p style={styles.statLabel}>Expected Today</p>
-            <h2 style={styles.statValue}>
-              {formatMoney(totals.expectedTotal)}
-            </h2>
+            <h2 style={styles.statValue}>{formatMoney(totals.expectedTotal)}</h2>
           </div>
 
           <div style={styles.statCard}>
             <p style={styles.statLabel}>Actual Today</p>
-            <h2 style={styles.statValue}>
-              {formatMoney(totals.actualTotal)}
-            </h2>
+            <h2 style={styles.statValue}>{formatMoney(totals.actualTotal)}</h2>
           </div>
 
           <div style={styles.statCard}>
@@ -304,6 +298,8 @@ export default function CollectionsPage() {
             />
           </div>
 
+          {errorText ? <div style={styles.errorBox}>{errorText}</div> : null}
+
           {loading ? (
             <p style={styles.noteText}>Loading daily collections...</p>
           ) : !filteredRows.length ? (
@@ -311,9 +307,9 @@ export default function CollectionsPage() {
           ) : (
             <>
               <div style={styles.mobileList}>
-                {filteredRows.map((row, index) => (
+                {filteredRows.map((row) => (
                   <button
-                    key={`${row.loan_id}-${index}`}
+                    key={row.loan_id}
                     type="button"
                     style={styles.mobileCard}
                     onClick={() => openMember(row)}
@@ -399,9 +395,9 @@ export default function CollectionsPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredRows.map((row, index) => (
+                      {filteredRows.map((row) => (
                         <tr
-                          key={`${row.loan_id}-${index}`}
+                          key={row.loan_id}
                           style={{ cursor: 'pointer' }}
                           onClick={() => openMember(row)}
                         >
@@ -542,6 +538,15 @@ const styles: Record<string, React.CSSProperties> = {
   noteText: {
     color: '#6b6480',
     fontSize: '14px',
+  },
+  errorBox: {
+    marginBottom: '18px',
+    padding: '14px',
+    borderRadius: '12px',
+    background: '#fef3f2',
+    border: '1px solid #fecdca',
+    color: '#b42318',
+    lineHeight: 1.5,
   },
   mobileList: {
     display: 'grid',
