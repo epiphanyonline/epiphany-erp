@@ -123,7 +123,7 @@ export default function DisbursementSchedulePage() {
   const [selectedMember, setSelectedMember] = useState<MemberSearchRow | null>(null)
 
   const [proposedAmount, setProposedAmount] = useState('')
-  const [tenureDays, setTenureDays] = useState('30')
+  const [tenureDays, setTenureDays] = useState('20')
   const [requestNote, setRequestNote] = useState('')
 
   const [editingLineId, setEditingLineId] = useState<string | null>(null)
@@ -349,7 +349,7 @@ export default function DisbursementSchedulePage() {
     setMemberSearch('')
     setMemberResults([])
     setProposedAmount('')
-    setTenureDays('30')
+    setTenureDays('20')
     setRequestNote('')
     setEditingLineId(null)
   }
@@ -368,7 +368,7 @@ export default function DisbursementSchedulePage() {
     setMemberSearch(`${line.member_name_snapshot} (${line.member_code})`)
     setMemberResults([])
     setProposedAmount(String(line.proposed_amount || ''))
-    setTenureDays(String(line.tenure_days || '30'))
+    setTenureDays(String(line.tenure_days || '20'))
     setRequestNote(line.request_note || '')
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
@@ -902,7 +902,7 @@ export default function DisbursementSchedulePage() {
                       value={tenureDays}
                       onChange={(e) => setTenureDays(e.target.value)}
                       style={styles.input}
-                      placeholder="e.g. 30"
+                      placeholder="e.g. 20"
                     />
                   </div>
 
