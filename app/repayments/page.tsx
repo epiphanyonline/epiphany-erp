@@ -4,6 +4,11 @@ import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useCurrentStaff } from '../../lib/useCurrentStaff'
 
+type StaffScope = {
+  role: string
+  park_id: string | null
+}
+
 type MemberBaseRow = {
   id: string
   member_code: string
@@ -43,6 +48,9 @@ function getTodayDateString() {
 export default function RepaymentsPage() {
   const { staff, loading: staffLoading } = useCurrentStaff()
 
+  const [staffScope, setStaffScope] = useState<StaffScope | null>(null)
+  const [scopeLoading, setScopeLoading] = useState(true)
+
   const [memberSearch, setMemberSearch] = useState('')
   const [memberResults, setMemberResults] = useState<MemberSearchRow[]>([])
   const [searchingMembers, setSearchingMembers] = useState(false)
@@ -64,17 +72,56 @@ export default function RepaymentsPage() {
   }, [staffLoading, staff])
 
   useEffect(() => {
+    async function loadStaffScope() {
+      if (!staff?.staff_code) {
+        setScopeLoading(false)
+        return
+      }
+
+      setScopeLoading(true)
+
+      const { data, error } = await supabase
+        .from('staff')
+        .select('role, park_id')
+        .eq('staff_code', staff.staff_code)
+        .eq('is_active', true)
+        .maybeSingle()
+
+      if (error || !data) {
+        setStaffScope(null)
+        setErrorText(error?.message || 'Failed to load staff scope.')
+        setScopeLoading(false)
+        return
+      }
+
+      setStaffScope({
+        role: String((data as any).role || '').toUpperCase(),
+        park_id: (data as any).park_id || null,
+      })
+
+      setScopeLoading(false)
+    }
+
+    if (!staffLoading && staff) {
+      loadStaffScope()
+    }
+  }, [staffLoading, staff])
+
+  useEffect(() => {
     async function searchMembers() {
       const q = memberSearch.trim()
 
-      if (q.length < 2) {
+      if (q.length < 2 || !staffScope) {
         setMemberResults([])
         return
       }
 
       setSearchingMembers(true)
 
-      const { data, error } = await supabase
+      const canSeeAll =
+        staffScope.role === 'ADMIN' || staffScope.role === 'SUPERVISOR'
+
+      let query = supabase
         .from('members')
         .select(`
           id,
@@ -89,8 +136,17 @@ export default function RepaymentsPage() {
         .order('full_name', { ascending: true })
         .limit(10)
 
-      console.log('member search data:', data)
-      console.log('member search error:', error)
+      if (!canSeeAll) {
+        if (!staffScope.park_id) {
+          setMemberResults([])
+          setSearchingMembers(false)
+          return
+        }
+
+        query = query.eq('main_park_id', staffScope.park_id)
+      }
+
+      const { data, error } = await query
 
       if (error || !data) {
         setMemberResults([])
@@ -152,7 +208,7 @@ export default function RepaymentsPage() {
 
     const timeout = setTimeout(searchMembers, 300)
     return () => clearTimeout(timeout)
-  }, [memberSearch])
+  }, [memberSearch, staffScope])
 
   const canSubmit = useMemo(() => {
     return !!selectedMember && !!amount && !!staff?.staff_code && !!businessDate
@@ -190,6 +246,15 @@ export default function RepaymentsPage() {
       return
     }
 
+    const canSeeAll =
+      staffScope?.role === 'ADMIN' || staffScope?.role === 'SUPERVISOR'
+
+    if (!canSeeAll && staffScope?.park_id && selectedMember.main_park_id !== staffScope.park_id) {
+      setErrorText('You can only post repayment for members in your assigned park.')
+      setLoading(false)
+      return
+    }
+
     const { data, error } = await supabase.rpc('post_loan_repayment', {
       p_member_code: selectedMember.member_code,
       p_amount: numericAmount,
@@ -198,9 +263,6 @@ export default function RepaymentsPage() {
       p_notes: notes.trim() || null,
       p_business_date: businessDate,
     })
-
-    console.log('repayment data:', data)
-    console.log('repayment error:', error)
 
     if (error) {
       setErrorText(error.message)
@@ -223,7 +285,7 @@ export default function RepaymentsPage() {
     setMemberResults([])
   }
 
-  if (staffLoading) {
+  if (staffLoading || scopeLoading) {
     return (
       <main style={styles.page}>
         <div style={styles.pageInner}>
@@ -234,6 +296,9 @@ export default function RepaymentsPage() {
   }
 
   if (!staff) return null
+
+  const canSeeAll =
+    staffScope?.role === 'ADMIN' || staffScope?.role === 'SUPERVISOR'
 
   return (
     <main style={styles.page}>
@@ -252,6 +317,11 @@ export default function RepaymentsPage() {
         <section style={styles.card}>
           <div style={styles.loggedInBox}>
             Signed in as <strong>{staff.full_name}</strong> ({staff.staff_code}) • {staff.role}
+            {!canSeeAll ? (
+              <>
+                {' '}• Park locked
+              </>
+            ) : null}
           </div>
 
           <form onSubmit={handleSubmit}>
@@ -267,7 +337,11 @@ export default function RepaymentsPage() {
                     setResult(null)
                     setErrorText('')
                   }}
-                  placeholder="Search by member code, name, or phone"
+                  placeholder={
+                    canSeeAll
+                      ? 'Search by member code, name, or phone'
+                      : 'Search members in your park only'
+                  }
                 />
 
                 {searchingMembers && (
