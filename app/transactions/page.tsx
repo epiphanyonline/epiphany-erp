@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useCurrentStaff } from '../../lib/useCurrentStaff'
+import jsPDF from 'jspdf'
+import autoTable from 'jspdf-autotable'
 
 type TransactionRow = {
   id: string
@@ -189,24 +191,106 @@ export default function TransactionsPage() {
   }, [filteredRows, effectiveRows])
 
   function canReverse(row: TransactionRow) {
-  if (!canSeeAllTransactions) return false
-  if (row.tx_type === 'REVERSAL') return false
-  if (String(row.correction_reason || '').trim()) return false
+    if (!canSeeAllTransactions) return false
+    if (row.tx_type === 'REVERSAL') return false
+    if (String(row.correction_reason || '').trim()) return false
 
-  if (row.tx_type === 'LOAN_REPAYMENT') return true
-  if (row.tx_type === 'SAVINGS_DEPOSIT') return true
-  if (row.tx_type === 'REMITTANCE') return true
-  if (row.tx_type === 'LOAN_DISBURSEMENT') return true
+    if (row.tx_type === 'LOAN_REPAYMENT') return true
+    if (row.tx_type === 'SAVINGS_DEPOSIT') return true
+    if (row.tx_type === 'REMITTANCE') return true
+    if (row.tx_type === 'LOAN_DISBURSEMENT') return true
 
-  if (
-    row.tx_type === 'FEE' &&
-    ['CARD_FEE', 'PROCESSING_FEE', 'MEMBERSHIP_FEE'].includes(row.sub_type || '')
-  ) {
-    return true
+    if (
+      row.tx_type === 'FEE' &&
+      ['CARD_FEE', 'PROCESSING_FEE', 'MEMBERSHIP_FEE'].includes(row.sub_type || '')
+    ) {
+      return true
+    }
+
+    return false
   }
 
-  return false
-}
+  function handleDownloadPdf() {
+    if (!canSeeAllTransactions || !filteredRows.length) return
+
+    const doc = new jsPDF('landscape', 'mm', 'a4')
+    const generatedAt = new Date().toLocaleString()
+
+    doc.setFontSize(18)
+    doc.text('Epiphany ERP - Transaction History Report', 14, 15)
+
+    doc.setFontSize(10)
+    doc.text(`Generated: ${generatedAt}`, 14, 22)
+    doc.text(`Date Range: ${dateFrom} to ${dateTo}`, 14, 28)
+    doc.text(`Transaction Type: ${txType || 'ALL'}`, 14, 34)
+    doc.text(`Visible Rows: ${totals.visibleCount}`, 14, 40)
+    doc.text(`Effective Rows: ${totals.effectiveCount}`, 70, 40)
+    doc.text(`Effective In: ${formatAmount(totals.totalIn)}`, 125, 40)
+    doc.text(`Effective Out: ${formatAmount(totals.totalOut)}`, 190, 40)
+
+    const body = filteredRows.map((row, index) => [
+      String(index + 1),
+      row.business_date || '-',
+      row.tx_ref || '-',
+      row.tx_type || '-',
+      row.sub_type || '-',
+      row.direction || '-',
+      formatAmount(Number(row.amount || 0)),
+      row.member_name || '-',
+      row.member_code || '-',
+      row.staff_name || '-',
+      row.park_name || '-',
+      row.reference_text || '-',
+      isEffectiveOperationalRow(row) ? 'Effective' : 'Reversed / Excluded',
+    ])
+
+    autoTable(doc, {
+      startY: 46,
+      head: [[
+        'S/N',
+        'Date',
+        'Ref',
+        'Type',
+        'Sub Type',
+        'Direction',
+        'Amount',
+        'Member',
+        'Member Code',
+        'Staff',
+        'Park',
+        'Reference',
+        'Status',
+      ]],
+      body,
+      styles: {
+        fontSize: 8,
+        cellPadding: 2,
+        overflow: 'linebreak',
+      },
+      headStyles: {
+        fillColor: [75, 46, 131],
+      },
+      columnStyles: {
+        0: { cellWidth: 10 },
+        1: { cellWidth: 18 },
+        2: { cellWidth: 42 },
+        3: { cellWidth: 28 },
+        4: { cellWidth: 24 },
+        5: { cellWidth: 18 },
+        6: { cellWidth: 24 },
+        7: { cellWidth: 32 },
+        8: { cellWidth: 22 },
+        9: { cellWidth: 28 },
+        10: { cellWidth: 24 },
+        11: { cellWidth: 42 },
+        12: { cellWidth: 24 },
+      },
+      margin: { top: 46, right: 10, bottom: 10, left: 10 },
+    })
+
+    const safeType = txType ? txType.toLowerCase() : 'all'
+    doc.save(`transactions-${safeType}-${dateFrom}-to-${dateTo}.pdf`)
+  }
 
   async function handleReverseSubmit() {
     if (!staff || !selectedTx) return
@@ -397,6 +481,19 @@ export default function TransactionsPage() {
                 />
               </div>
             </div>
+
+            {canSeeAllTransactions ? (
+              <div style={styles.downloadRow}>
+                <button
+                  type="button"
+                  style={styles.downloadButton}
+                  onClick={handleDownloadPdf}
+                  disabled={loading || !filteredRows.length}
+                >
+                  Download PDF
+                </button>
+              </div>
+            ) : null}
           </div>
 
           {loading ? (
@@ -772,6 +869,19 @@ const styles: Record<string, React.CSSProperties> = {
     border: 'none',
     background: '#fef3f2',
     color: '#b42318',
+    cursor: 'pointer',
+    fontWeight: 700,
+  },
+  downloadRow: {
+    display: 'flex',
+    justifyContent: 'flex-start',
+  },
+  downloadButton: {
+    padding: '12px 16px',
+    borderRadius: '12px',
+    border: 'none',
+    background: '#4b2e83',
+    color: '#fff',
     cursor: 'pointer',
     fontWeight: 700,
   },
