@@ -199,6 +199,7 @@ export default function TransactionsPage() {
     if (row.tx_type === 'SAVINGS_DEPOSIT') return true
     if (row.tx_type === 'REMITTANCE') return true
     if (row.tx_type === 'LOAN_DISBURSEMENT') return true
+    if (row.tx_type === 'EXPENSE') return true
 
     if (
       row.tx_type === 'FEE' &&
