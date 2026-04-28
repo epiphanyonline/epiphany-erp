@@ -18,6 +18,12 @@ type MemberSearchRow = MemberBaseRow & {
   service_officer_name: string | null
 }
 
+type SavingsBalanceRow = {
+  account_type: string
+  balance: number | null
+  status: string | null
+}
+
 type SavingsWithdrawalResult = {
   success: boolean
   message: string
@@ -54,6 +60,9 @@ export default function SavingsWithdrawalPage() {
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<SavingsWithdrawalResult | null>(null)
   const [errorText, setErrorText] = useState('')
+
+  const [savingsBalances, setSavingsBalances] = useState<SavingsBalanceRow[]>([])
+const [balanceLoading, setBalanceLoading] = useState(false)
 
   useEffect(() => {
     const savedStaffCode = localStorage.getItem('epiphany_staff_code')
@@ -159,6 +168,31 @@ export default function SavingsWithdrawalPage() {
     return () => clearTimeout(timeout)
   }, [memberSearch])
 
+  async function loadSavingsBalances(memberId: string) {
+  setBalanceLoading(true)
+
+  const { data, error } = await supabase
+    .from('savings_accounts')
+    .select('account_type, balance, status')
+    .eq('member_id', memberId)
+    .order('account_type', { ascending: true })
+
+  if (error || !data) {
+    setSavingsBalances([])
+    setBalanceLoading(false)
+    return
+  }
+
+  setSavingsBalances(
+    ((data as SavingsBalanceRow[]) || []).map((row) => ({
+      ...row,
+      balance: Number(row.balance || 0),
+    }))
+  )
+
+  setBalanceLoading(false)
+}
+
   const canSubmit = useMemo(() => {
     return !!selectedMember && !!amount && !!staffCode.trim() && !!businessDate && !!accountType
   }, [selectedMember, amount, staffCode, businessDate, accountType])
@@ -227,6 +261,7 @@ export default function SavingsWithdrawalPage() {
     setSelectedMember(null)
     setMemberSearch('')
     setMemberResults([])
+    setSavingsBalances([])
   }
 
   return (
@@ -273,8 +308,9 @@ export default function SavingsWithdrawalPage() {
                         style={styles.searchResultItem}
                         onClick={() => {
                           setSelectedMember(member)
-                          setMemberSearch(`${member.full_name} (${member.member_code})`)
-                          setMemberResults([])
+                            setMemberSearch(`${member.full_name} (${member.member_code})`)
+                            setMemberResults([])
+                            loadSavingsBalances(member.id)
                         }}
                       >
                         <div style={styles.resultTitleRow}>
@@ -317,6 +353,32 @@ export default function SavingsWithdrawalPage() {
                   </button>
                 </div>
               )}
+
+              {selectedMember && (
+  <div style={{ ...styles.balancePanel, gridColumn: '1 / -1' }}>
+    <p style={styles.balanceTitle}>Savings Balances</p>
+
+    {balanceLoading ? (
+      <p style={styles.helperText}>Loading savings balances...</p>
+    ) : savingsBalances.length === 0 ? (
+      <p style={styles.helperText}>No savings account found for this member.</p>
+    ) : (
+      <div style={styles.balanceGrid}>
+        {savingsBalances.map((account) => (
+          <div key={account.account_type} style={styles.balanceCard}>
+            <p style={styles.balanceLabel}>{account.account_type}</p>
+            <p style={styles.balanceValue}>
+              ₦{Number(account.balance || 0).toLocaleString()}
+            </p>
+            <p style={styles.balanceStatus}>
+              Status: {account.status || '-'}
+            </p>
+          </div>
+        ))}
+      </div>
+    )}
+  </div>
+)}
 
               <div style={styles.field}>
                 <label style={styles.label}>Account Type</label>
@@ -568,6 +630,46 @@ const styles: Record<string, React.CSSProperties> = {
     color: '#2d1b69',
     lineHeight: 1.4,
   },
+  balancePanel: {
+  padding: '16px',
+  borderRadius: '14px',
+  background: '#fcfbff',
+  border: '1px solid #ece7f7',
+},
+balanceTitle: {
+  margin: '0 0 12px',
+  fontSize: '15px',
+  fontWeight: 800,
+  color: '#4b2e83',
+},
+balanceGrid: {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+  gap: '12px',
+},
+balanceCard: {
+  padding: '14px',
+  borderRadius: '12px',
+  background: '#ffffff',
+  border: '1px solid #e8def8',
+},
+balanceLabel: {
+  margin: 0,
+  fontSize: '12px',
+  color: '#7a7191',
+  fontWeight: 700,
+},
+balanceValue: {
+  margin: '8px 0 0',
+  fontSize: '22px',
+  color: '#2d1b69',
+  fontWeight: 800,
+},
+balanceStatus: {
+  margin: '6px 0 0',
+  fontSize: '12px',
+  color: '#6b6480',
+},
   selectedDetailsStack: {
     display: 'grid',
     gap: '4px',
