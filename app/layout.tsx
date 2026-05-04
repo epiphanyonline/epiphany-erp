@@ -99,7 +99,7 @@ export default function RootLayout({
 {
   href: '/admin',
   label: 'Admin Dashboard',
-  show: !!canUseSupervisorPages,
+  show: isSupervisor,
 },
 
     // 👇 MEMBERS SECTION
