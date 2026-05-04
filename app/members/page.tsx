@@ -29,6 +29,13 @@ type StaffScopeRow = {
   park_id: string | null
 }
 
+type DirectoryTotals = {
+  total_clients: number
+  total_savings: number
+  total_loan_outstanding: number
+  total_net_position: number
+}
+
 const PAGE_SIZE = 200
 const LOAD_ALL_BATCH_SIZE = 1000
 
@@ -61,6 +68,13 @@ export default function MembersPage() {
   const [staffRole, setStaffRole] = useState('')
   const [staffParkId, setStaffParkId] = useState<string | null>(null)
   const [staffScopeLoading, setStaffScopeLoading] = useState(true)
+  const [totalCount, setTotalCount] = useState(0)
+  const [directoryTotals, setDirectoryTotals] = useState<DirectoryTotals>({
+  total_clients: 0,
+  total_savings: 0,
+  total_loan_outstanding: 0,
+  total_net_position: 0,
+})
 
   const isAdminOrSupervisor =
     staffRole === 'ADMIN' || staffRole === 'SUPERVISOR'
@@ -139,7 +153,7 @@ export default function MembersPage() {
   const buildMembersQuery = useCallback(() => {
     let query = supabase
       .from('vw_member_directory')
-      .select('*')
+      .select('*', { count: 'exact' })
       .order('created_at', { ascending: false })
 
     if (search) {
@@ -171,6 +185,35 @@ export default function MembersPage() {
     }))
   }, [])
 
+  const loadDirectoryTotals = useCallback(async () => {
+  const parkFilter =
+    !isAdminOrSupervisor && staffParkId
+      ? staffParkId
+      : selectedPark !== 'ALL'
+      ? selectedPark
+      : null
+
+  const { data, error } = await supabase.rpc('get_member_directory_totals', {
+    p_search: search || null,
+    p_park_id: parkFilter,
+    p_status: selectedStatus === 'ALL' ? null : selectedStatus,
+  })
+
+  if (error) {
+    console.error(error)
+    return
+  }
+
+  const totals = data?.[0]
+
+  setDirectoryTotals({
+    total_clients: Number(totals?.total_clients || 0),
+    total_savings: Number(totals?.total_savings || 0),
+    total_loan_outstanding: Number(totals?.total_loan_outstanding || 0),
+    total_net_position: Number(totals?.total_net_position || 0),
+  })
+}, [search, selectedPark, selectedStatus, isAdminOrSupervisor, staffParkId])
+
   const loadMembersPage = useCallback(
     async (pageIndex: number, replace = false) => {
       const from = pageIndex * PAGE_SIZE
@@ -184,7 +227,12 @@ export default function MembersPage() {
 
       setErrorText('')
 
-      const { data, error } = await buildMembersQuery().range(from, to)
+      const { data, error, count } = await buildMembersQuery()
+  .range(from, to)
+
+  if (typeof count === 'number') {
+  setTotalCount(count)
+}
 
       if (error) {
         setErrorText(error.message || 'Failed to load members.')
@@ -243,14 +291,7 @@ export default function MembersPage() {
         }
       }
 
-      const uniqueMap = new Map<string, MemberRow>()
-      for (const row of allRows) {
-        uniqueMap.set(row.member_id, row)
-      }
-
-      const finalRows = Array.from(uniqueMap.values())
-
-      setRows(finalRows)
+      setRows(allRows)
       setLoadedAll(true)
       setHasMore(false)
       setPage(0)
@@ -281,51 +322,44 @@ export default function MembersPage() {
   }, [loading, loadingMore, loadingAll, hasMore, loadedAll, page, loadMembersPage])
 
   useEffect(() => {
-    if (!staffLoading && staff) {
-      loadStaffScope()
-    }
-  }, [staffLoading, staff, loadStaffScope])
+  if (!staffLoading && staff) {
+    loadStaffScope()
+  }
+}, [staffLoading, staff, loadStaffScope])
+
+useEffect(() => {
+  if (!staffLoading && staff) {
+    loadParks()
+  }
+}, [staffLoading, staff, loadParks])
 
   useEffect(() => {
-    if (!staffLoading && staff) {
-      loadParks()
-    }
-  }, [staffLoading, staff, loadParks])
-
-  useEffect(() => {
-    if (!staffLoading && !staffScopeLoading && staff) {
-      setPage(0)
-      setHasMore(true)
-      setLoadedAll(false)
-      loadMembersPage(0, true)
-    }
-  }, [
-    staffLoading,
-    staffScopeLoading,
-    staff,
-    search,
-    selectedPark,
-    selectedStatus,
-    loadMembersPage,
-  ])
+  if (!staffLoading && !staffScopeLoading && staff) {
+    setPage(0)
+    setHasMore(true)
+    setLoadedAll(false)
+    loadMembersPage(0, true)
+    loadDirectoryTotals()
+  }
+}, [
+  staffLoading,
+  staffScopeLoading,
+  staff,
+  search,
+  selectedPark,
+  selectedStatus,
+  loadMembersPage,
+  loadDirectoryTotals,
+])
 
   const totals = useMemo(() => {
-    return {
-      memberCount: rows.length,
-      totalSavings: rows.reduce(
-        (sum, row) => sum + toNumber(row.total_savings_balance),
-        0
-      ),
-      totalLoanOutstanding: rows.reduce(
-        (sum, row) => sum + toNumber(row.total_loan_outstanding),
-        0
-      ),
-      totalNetPosition: rows.reduce(
-        (sum, row) => sum + toNumber(row.net_position),
-        0
-      ),
-    }
-  }, [rows])
+  return {
+    memberCount: directoryTotals.total_clients,
+    totalSavings: directoryTotals.total_savings,
+    totalLoanOutstanding: directoryTotals.total_loan_outstanding,
+    totalNetPosition: directoryTotals.total_net_position,
+  }
+}, [directoryTotals])
 
   const statuses = useMemo(() => {
     return ['ACTIVE', 'INACTIVE']
@@ -444,7 +478,7 @@ export default function MembersPage() {
             </div>
 
             <p style={styles.smallMutedText}>
-              Loaded: {rows.length}
+              Loaded: {rows.length} of {totalCount || rows.length}
               {loadedAll
                 ? ' • Full list loaded'
                 : hasMore
@@ -505,8 +539,11 @@ export default function MembersPage() {
           ) : (
             <>
               <div style={styles.memberList}>
-                {rows.map((row) => (
-                  <div key={row.member_id} style={styles.memberCard}>
+                {rows.map((row, index) => (
+                <div
+                  key={`${row.member_id || 'no-id'}-${row.member_code || 'no-code'}-${index}`}
+                  style={styles.memberCard}
+                >
                     <div style={styles.memberTop}>
                       <div>
                         <div

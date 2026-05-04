@@ -168,13 +168,9 @@ export default function AdminDashboardPage() {
     return null
   }
 
-  const topCashParks = [...parks]
-    .sort((a, b) => b.total_cash_in - a.total_cash_in)
-    .slice(0, 8)
-
-  const topSavingsParks = [...parks]
-    .sort((a, b) => b.total_savings_balance - a.total_savings_balance)
-    .slice(0, 8)
+  const topCashParks = [...parks].sort((a, b) => b.total_cash_in - a.total_cash_in).slice(0, 8)
+const topSavingsParks = [...parks].sort((a, b) => b.total_savings_balance - a.total_savings_balance).slice(0, 8)
+const topDisbursementParks = [...parks].sort((a, b) => b.total_disbursement - a.total_disbursement).slice(0, 8)
 
   return (
     <main className="min-h-screen bg-slate-950 text-white p-4 md:p-8">
@@ -249,10 +245,10 @@ export default function AdminDashboardPage() {
           <ChartCard title="Top Parks by Cash In">
             <ResponsiveContainer width="100%" height={300}>
               <BarChart data={topCashParks}>
-                <XAxis dataKey="park_name" stroke="#94a3b8" />
-                <YAxis stroke="#94a3b8" />
-                <Tooltip />
-                <Bar dataKey="total_cash_in" />
+                <XAxis dataKey="park_name" stroke="#c4b5fd" interval={0} angle={-25} textAnchor="end" height={70} />
+<YAxis stroke="#c4b5fd" />
+<Tooltip />
+<Bar dataKey="total_cash_in" fill="#8b5cf6" radius={[8, 8, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </ChartCard>
@@ -260,10 +256,10 @@ export default function AdminDashboardPage() {
           <ChartCard title="Top Parks by Savings Balance">
             <ResponsiveContainer width="100%" height={300}>
               <BarChart data={topSavingsParks}>
-                <XAxis dataKey="park_name" stroke="#94a3b8" />
-                <YAxis stroke="#94a3b8" />
-                <Tooltip />
-                <Bar dataKey="total_savings_balance" />
+                <XAxis dataKey="park_name" stroke="#c4b5fd" interval={0} angle={-25} textAnchor="end" height={70} />
+<YAxis stroke="#c4b5fd" />
+<Tooltip />
+<Bar dataKey="total_savings_balance" fill="#8b5cf6" radius={[8, 8, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </ChartCard>
@@ -272,14 +268,12 @@ export default function AdminDashboardPage() {
         <ChartCard title="Top Parks by Total Disbursement">
   <ResponsiveContainer width="100%" height={300}>
     <BarChart
-      data={[...parks]
-        .sort((a, b) => b.total_disbursement - a.total_disbursement)
-        .slice(0, 8)}
+      data={topDisbursementParks}
     >
-      <XAxis dataKey="park_name" stroke="#94a3b8" />
-      <YAxis stroke="#94a3b8" />
-      <Tooltip />
-      <Bar dataKey="total_disbursement" />
+      <XAxis dataKey="park_name" stroke="#c4b5fd" interval={0} angle={-25} textAnchor="end" height={70} />
+<YAxis stroke="#c4b5fd" />
+<Tooltip />
+<Bar dataKey="total_disbursement" fill="#8b5cf6" radius={[8, 8, 0, 0]} />
     </BarChart>
   </ResponsiveContainer>
 </ChartCard>
@@ -312,7 +306,7 @@ export default function AdminDashboardPage() {
             <table className="min-w-full text-sm">
               <thead className="bg-slate-950 text-slate-300">
                 <tr>
-                  <Th>Park</Th>
+                  <StickyTh>Park</StickyTh>
                   <Th>Clients</Th>
                   <Th>Loan Beneficiaries</Th>
                   <Th>Loan Portfolio</Th>
@@ -329,7 +323,7 @@ export default function AdminDashboardPage() {
               <tbody>
                 {parks.map((park) => (
                   <tr key={park.park_id} className="border-t border-slate-800 hover:bg-slate-800/60">
-                    <Td>{park.park_name}</Td>
+                    <StickyTd>{park.park_name}</StickyTd>
                     <Td>{number(park.total_client_base)}</Td>
                     <Td>{number(park.total_loan_beneficiaries)}</Td>
                     <Td>{money(park.total_current_loan_portfolio)}</Td>
@@ -376,4 +370,20 @@ function Th({ children }: { children: React.ReactNode }) {
 
 function Td({ children }: { children: React.ReactNode }) {
   return <td className="px-4 py-3 whitespace-nowrap text-slate-200">{children}</td>
+}
+
+function StickyTh({ children }: { children: React.ReactNode }) {
+  return (
+    <th className="sticky left-0 z-20 bg-slate-950 text-left px-4 py-3 whitespace-nowrap font-semibold border-r border-slate-800">
+      {children}
+    </th>
+  )
+}
+
+function StickyTd({ children }: { children: React.ReactNode }) {
+  return (
+    <td className="sticky left-0 z-10 bg-slate-900 px-4 py-3 whitespace-nowrap text-purple-200 font-semibold border-r border-slate-800">
+      {children}
+    </td>
+  )
 }
