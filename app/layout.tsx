@@ -95,6 +95,13 @@ export default function RootLayout({
   () => [
     { href: '/', label: 'Home', show: true },
 
+    // 👇 CONTROL CENTRE (TOP PRIORITY)
+{
+  href: '/admin',
+  label: 'Admin Dashboard',
+  show: !!canUseSupervisorPages,
+},
+
     // 👇 MEMBERS SECTION
     { href: '/members', label: 'Members', show: true },
     {
