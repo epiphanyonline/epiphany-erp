@@ -140,12 +140,25 @@ export default function RootLayout({
     { href: '/bulk-upload/exceptions', label: 'Upload Exceptions', show: isSupervisor },
     { href: '/disbursement-approval', label: 'Disb. Approval', show: true },
     { href: '/disbursement-schedule-history', label: 'Disb. History', show: true },
+    { href: '/expense-approvals', label: 'Expense Approvals', show: isSupervisor },
+    { href: '/accounting', label: 'Accounting', show: isSupervisor },
   ],
   [canDisburse, canWithdrawSavings, canUseSupervisorPages, isSupervisor]
 )
   return (
-    <html lang="en">
-      <body style={styles.body}>
+  <html lang="en">
+    <head>
+      <title>Epiphany ERP</title>
+      <meta name="description" content="Epiphany ERP Progressive Web App" />
+      <meta name="theme-color" content="#4b2e83" />
+      <meta name="apple-mobile-web-app-capable" content="yes" />
+      <meta name="apple-mobile-web-app-title" content="Epiphany ERP" />
+      <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+      <link rel="manifest" href="/manifest.json" />
+      <link rel="apple-touch-icon" href="/icon-192.png" />
+    </head>
+
+    <body style={styles.body}>
         {!checkingSession && isLoggedIn ? <ActivityHeartbeat /> : null}
 
         {!checkingSession && isLoggedIn ? (
