@@ -50,6 +50,21 @@ type ParkRanking = {
   repayment_rank: number
   savings_rank: number
   cash_in_rank: number
+
+  period_loan_count?: number
+  period_disbursement?: number
+  period_loan_outstanding?: number
+  period_recovered_amount?: number
+  recovery_percentage?: number
+}
+
+type ParkRecovery = {
+  park_name: string
+  loan_count: number
+  period_disbursement: number
+  period_loan_outstanding: number
+  period_recovered_amount: number
+  recovery_percentage: number
 }
 
 type DailyTrend = {
@@ -72,6 +87,10 @@ function money(value: number | null | undefined) {
 
 function number(value: number | null | undefined) {
   return new Intl.NumberFormat('en-NG').format(Number(value || 0))
+}
+
+function normalizeParkName(value: string | null | undefined) {
+  return String(value || '').trim().toLowerCase()
 }
 
 export default function AdminDashboardPage() {
@@ -100,7 +119,7 @@ export default function AdminDashboardPage() {
 
   useEffect(() => {
     if (!staffLoading && staff && !canAccess) {
-      router.push('/app')
+      router.push('/')
     }
   }, [staffLoading, staff, canAccess, router])
 
@@ -121,18 +140,38 @@ export default function AdminDashboardPage() {
         p_to_date: toDate || null,
       }
 
-      const [overviewRes, parkRes, dailyRes] = await Promise.all([
+      const [overviewRes, parkRes, recoveryRes, dailyRes] = await Promise.all([
         supabase.rpc('get_general_performance_overview', params),
         supabase.rpc('get_park_ranking_overview', params),
+        supabase.rpc('get_park_loan_recovery', params),
         supabase.rpc('get_daily_performance_trend', params),
       ])
 
       if (overviewRes.error) throw overviewRes.error
       if (parkRes.error) throw parkRes.error
+      if (recoveryRes.error) throw recoveryRes.error
       if (dailyRes.error) throw dailyRes.error
 
+      const recoveryRows = (recoveryRes.data || []) as ParkRecovery[]
+      const recoveryMap = new Map(
+        recoveryRows.map((row) => [normalizeParkName(row.park_name), row])
+      )
+
+      const mergedParks = ((parkRes.data || []) as ParkRanking[]).map((park) => {
+        const recovery = recoveryMap.get(normalizeParkName(park.park_name))
+
+        return {
+          ...park,
+          period_loan_count: Number(recovery?.loan_count || 0),
+          period_disbursement: Number(recovery?.period_disbursement || 0),
+          period_loan_outstanding: Number(recovery?.period_loan_outstanding || 0),
+          period_recovered_amount: Number(recovery?.period_recovered_amount || 0),
+          recovery_percentage: Number(recovery?.recovery_percentage || 0),
+        }
+      })
+
       setOverview(overviewRes.data?.[0] || null)
-      setParks(parkRes.data || [])
+      setParks(mergedParks)
       setDailyTrend(dailyRes.data || [])
     } catch (err: any) {
       console.error(err)
@@ -156,6 +195,44 @@ export default function AdminDashboardPage() {
     XLSX.writeFile(workbook, `admin-performance-${fromDate}-to-${toDate}.xlsx`)
   }
 
+  const topCashParks = [...parks]
+    .sort((a, b) => Number(b.total_cash_in || 0) - Number(a.total_cash_in || 0))
+    .slice(0, 8)
+
+  const topSavingsParks = [...parks]
+    .sort(
+      (a, b) =>
+        Number(b.total_savings_balance || 0) - Number(a.total_savings_balance || 0)
+    )
+    .slice(0, 8)
+
+  const topDisbursementParks = [...parks]
+    .sort(
+      (a, b) =>
+        Number(b.period_disbursement || 0) - Number(a.period_disbursement || 0)
+    )
+    .slice(0, 8)
+
+  const totalPeriodDisbursed = parks.reduce(
+    (sum, park) => sum + Number(park.period_disbursement || 0),
+    0
+  )
+
+  const totalPeriodOutstanding = parks.reduce(
+    (sum, park) => sum + Number(park.period_loan_outstanding || 0),
+    0
+  )
+
+  const totalPeriodRecovered = parks.reduce(
+    (sum, park) => sum + Number(park.period_recovered_amount || 0),
+    0
+  )
+
+  const overallRecoveryPercentage =
+    totalPeriodDisbursed > 0
+      ? (totalPeriodRecovered / totalPeriodDisbursed) * 100
+      : 0
+
   if (staffLoading || loading) {
     return (
       <main className="min-h-screen bg-slate-950 text-white p-6">
@@ -168,14 +245,9 @@ export default function AdminDashboardPage() {
     return null
   }
 
-  const topCashParks = [...parks].sort((a, b) => b.total_cash_in - a.total_cash_in).slice(0, 8)
-const topSavingsParks = [...parks].sort((a, b) => b.total_savings_balance - a.total_savings_balance).slice(0, 8)
-const topDisbursementParks = [...parks].sort((a, b) => b.total_disbursement - a.total_disbursement).slice(0, 8)
-
   return (
     <main className="min-h-screen bg-slate-950 text-white p-4 md:p-8">
       <div className="max-w-7xl mx-auto space-y-8">
-
         <section className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
           <div>
             <p className="text-sm text-purple-300 font-medium">Admin Control Centre</p>
@@ -183,7 +255,7 @@ const topDisbursementParks = [...parks].sort((a, b) => b.total_disbursement - a.
               General Performance Overview
             </h1>
             <p className="text-slate-400 mt-2">
-              Track parks, savings, loans, repayments, fees, cashflow and portfolio risk.
+              Track parks, savings, loans, repayments, fees, cashflow and period recovery.
             </p>
           </div>
 
@@ -224,11 +296,11 @@ const topDisbursementParks = [...parks].sort((a, b) => b.total_disbursement - a.
           </div>
         </section>
 
-        {error && (
+        {error ? (
           <div className="bg-red-950 border border-red-700 text-red-200 p-4 rounded-xl">
             {error}
           </div>
-        )}
+        ) : null}
 
         <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <Card title="Total Client Base" value={number(overview?.total_clients)} />
@@ -241,14 +313,31 @@ const topDisbursementParks = [...parks].sort((a, b) => b.total_disbursement - a.
           <Card title="Net Cashflow" value={money(overview?.net_cashflow)} />
         </section>
 
+        <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <Card title="Period Disbursed" value={money(totalPeriodDisbursed)} />
+          <Card title="Period Outstanding" value={money(totalPeriodOutstanding)} />
+          <Card title="Period Recovered" value={money(totalPeriodRecovered)} />
+          <Card
+            title="Overall Recovery"
+            value={`${overallRecoveryPercentage.toFixed(2)}%`}
+          />
+        </section>
+
         <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <ChartCard title="Top Parks by Cash In">
             <ResponsiveContainer width="100%" height={300}>
               <BarChart data={topCashParks}>
-                <XAxis dataKey="park_name" stroke="#c4b5fd" interval={0} angle={-25} textAnchor="end" height={70} />
-<YAxis stroke="#c4b5fd" />
-<Tooltip />
-<Bar dataKey="total_cash_in" fill="#8b5cf6" radius={[8, 8, 0, 0]} />
+                <XAxis
+                  dataKey="park_name"
+                  stroke="#c4b5fd"
+                  interval={0}
+                  angle={-25}
+                  textAnchor="end"
+                  height={70}
+                />
+                <YAxis stroke="#c4b5fd" />
+                <Tooltip />
+                <Bar dataKey="total_cash_in" fill="#8b5cf6" radius={[8, 8, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </ChartCard>
@@ -256,27 +345,47 @@ const topDisbursementParks = [...parks].sort((a, b) => b.total_disbursement - a.
           <ChartCard title="Top Parks by Savings Balance">
             <ResponsiveContainer width="100%" height={300}>
               <BarChart data={topSavingsParks}>
-                <XAxis dataKey="park_name" stroke="#c4b5fd" interval={0} angle={-25} textAnchor="end" height={70} />
-<YAxis stroke="#c4b5fd" />
-<Tooltip />
-<Bar dataKey="total_savings_balance" fill="#8b5cf6" radius={[8, 8, 0, 0]} />
+                <XAxis
+                  dataKey="park_name"
+                  stroke="#c4b5fd"
+                  interval={0}
+                  angle={-25}
+                  textAnchor="end"
+                  height={70}
+                />
+                <YAxis stroke="#c4b5fd" />
+                <Tooltip />
+                <Bar
+                  dataKey="total_savings_balance"
+                  fill="#8b5cf6"
+                  radius={[8, 8, 0, 0]}
+                />
               </BarChart>
             </ResponsiveContainer>
           </ChartCard>
         </section>
 
-        <ChartCard title="Top Parks by Total Disbursement">
-  <ResponsiveContainer width="100%" height={300}>
-    <BarChart
-      data={topDisbursementParks}
-    >
-      <XAxis dataKey="park_name" stroke="#c4b5fd" interval={0} angle={-25} textAnchor="end" height={70} />
-<YAxis stroke="#c4b5fd" />
-<Tooltip />
-<Bar dataKey="total_disbursement" fill="#8b5cf6" radius={[8, 8, 0, 0]} />
-    </BarChart>
-  </ResponsiveContainer>
-</ChartCard>
+        <ChartCard title="Top Parks by Period Disbursement">
+          <ResponsiveContainer width="100%" height={300}>
+            <BarChart data={topDisbursementParks}>
+              <XAxis
+                dataKey="park_name"
+                stroke="#c4b5fd"
+                interval={0}
+                angle={-25}
+                textAnchor="end"
+                height={70}
+              />
+              <YAxis stroke="#c4b5fd" />
+              <Tooltip />
+              <Bar
+                dataKey="period_disbursement"
+                fill="#8b5cf6"
+                radius={[8, 8, 0, 0]}
+              />
+            </BarChart>
+          </ResponsiveContainer>
+        </ChartCard>
 
         <section>
           <ChartCard title="Daily Cash In Trend">
@@ -298,7 +407,8 @@ const topDisbursementParks = [...parks].sort((a, b) => b.total_disbursement - a.
           <div className="p-5 border-b border-slate-800">
             <h2 className="text-xl font-bold">Park Ranking Overview</h2>
             <p className="text-sm text-slate-400">
-              Compare parks by portfolio, savings, repayments, cash-in and risk.
+              Compare parks by portfolio, savings, repayments, cash-in, risk and
+              period loan recovery.
             </p>
           </div>
 
@@ -318,11 +428,19 @@ const topDisbursementParks = [...parks].sort((a, b) => b.total_disbursement - a.
                   <Th>Collection %</Th>
                   <Th>Risk %</Th>
                   <Th>Cash Rank</Th>
+                  <Th>Period Loans</Th>
+                  <Th>Period Disbursed</Th>
+                  <Th>Period Outstanding</Th>
+                  <Th>Period Recovered</Th>
+                  <Th>Recovery %</Th>
                 </tr>
               </thead>
               <tbody>
                 {parks.map((park) => (
-                  <tr key={park.park_id} className="border-t border-slate-800 hover:bg-slate-800/60">
+                  <tr
+                    key={park.park_id || park.park_name}
+                    className="border-t border-slate-800 hover:bg-slate-800/60"
+                  >
                     <StickyTd>{park.park_name}</StickyTd>
                     <Td>{number(park.total_client_base)}</Td>
                     <Td>{number(park.total_loan_beneficiaries)}</Td>
@@ -332,9 +450,14 @@ const topDisbursementParks = [...parks].sort((a, b) => b.total_disbursement - a.
                     <Td>{money(park.total_repayments)}</Td>
                     <Td>{money(park.total_cash_in)}</Td>
                     <Td>{money(park.total_fees)}</Td>
-                    <Td>{park.collection_rate_percent}%</Td>
-                    <Td>{park.portfolio_risk_percent}%</Td>
+                    <Td>{Number(park.collection_rate_percent || 0).toFixed(2)}%</Td>
+                    <Td>{Number(park.portfolio_risk_percent || 0).toFixed(2)}%</Td>
                     <Td>#{park.cash_in_rank}</Td>
+                    <Td>{number(park.period_loan_count)}</Td>
+                    <Td>{money(park.period_disbursement)}</Td>
+                    <Td>{money(park.period_loan_outstanding)}</Td>
+                    <Td>{money(park.period_recovered_amount)}</Td>
+                    <Td>{Number(park.recovery_percentage || 0).toFixed(2)}%</Td>
                   </tr>
                 ))}
               </tbody>
@@ -355,7 +478,13 @@ function Card({ title, value }: { title: string; value: string }) {
   )
 }
 
-function ChartCard({ title, children }: { title: string; children: React.ReactNode }) {
+function ChartCard({
+  title,
+  children,
+}: {
+  title: string
+  children: React.ReactNode
+}) {
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg">
       <h2 className="text-lg font-bold mb-4">{title}</h2>
