@@ -106,6 +106,10 @@ const [hasSearched, setHasSearched] = useState(false)
   const [actionError, setActionError] = useState('')
   const [parkSummaryRows, setParkSummaryRows] = useState<ParkFinancialSummary[]>([])
 const [parkSummaryLoading, setParkSummaryLoading] = useState(false)
+const [pageSize] = useState(500)
+const [loadedCount, setLoadedCount] = useState(0)
+const [hasMoreTransactions, setHasMoreTransactions] = useState(false)
+const [loadingMore, setLoadingMore] = useState(false)
 
   const canSeeAllTransactions =
     staff?.role === 'ADMIN' || staff?.role === 'SUPERVISOR'
@@ -139,57 +143,67 @@ const [parkSummaryLoading, setParkSummaryLoading] = useState(false)
     }
   }, [staffLoading, staff])
 
-  async function loadTransactions() {
+  async function loadTransactions(reset = true) {
   if (!staff) return
 
-  setLoading(true)
+  if (reset) {
+    setLoading(true)
+  } else {
+    setLoadingMore(true)
+  }
+
   setActionError('')
 
   try {
-    const pageSize = 1000
-    const maxRows = 10000
-    let allRows: TransactionRow[] = []
+    const from = reset ? 0 : loadedCount
+    const to = from + pageSize - 1
 
-    for (let from = 0; from < maxRows; from += pageSize) {
-      const to = from + pageSize - 1
+    let query = supabase
+      .from('vw_transaction_report')
+      .select('*')
+      .gte('business_date', dateFrom)
+      .lte('business_date', dateTo)
+      .order('business_date', { ascending: false })
+      .order('posted_at', { ascending: false })
+      .range(from, to)
 
-      let query = supabase
-        .from('vw_transaction_report')
-        .select('*')
-        .gte('business_date', dateFrom)
-        .lte('business_date', dateTo)
-        .order('business_date', { ascending: false })
-        .order('posted_at', { ascending: false })
-        .range(from, to)
-
-      if (txType) {
-        query = query.eq('tx_type', txType)
-      }
-
-      if (!canSeeAllTransactions) {
-        query = query.eq('staff_name', staff.full_name)
-      }
-
-      const { data, error } = await query
-
-      if (error) {
-        throw error
-      }
-
-      const batch = (data as TransactionRow[]) || []
-      allRows = [...allRows, ...batch]
-
-      if (batch.length < pageSize) {
-        break
-      }
+    if (txType) {
+      query = query.eq('tx_type', txType)
     }
 
-    setRows(allRows)
+    if (!canSeeAllTransactions) {
+      query = query.eq('staff_name', staff.full_name)
+    }
+
+    const { data, error } = await query
+
+    if (error) {
+      throw error
+    }
+
+    const batch = (data as TransactionRow[]) || []
+
+    if (reset) {
+      setRows(batch)
+      setLoadedCount(batch.length)
+    } else {
+      setRows((currentRows) => [...currentRows, ...batch])
+      setLoadedCount((current) => current + batch.length)
+    }
+
+    setHasMoreTransactions(batch.length === pageSize)
   } catch (error: any) {
-    setRows([])
-    setActionError(error.message || 'Failed to load transactions.')
+    if (reset) {
+      setRows([])
+      setLoadedCount(0)
+    }
+
+    setActionError(
+      error.message || 'Failed to load transactions.'
+    )
   } finally {
     setLoading(false)
+    setLoadingMore(false)
   }
 }
 
@@ -339,30 +353,36 @@ async function handleSearchTransactions() {
   setActionMessage('')
 
   if (!dateFrom || !dateTo) {
-    setActionError(
-      'Please select both From and To dates.'
-    )
+    setActionError('Please select both From and To dates.')
     return
   }
 
   if (dateFrom > dateTo) {
-    setActionError(
-      'From date cannot be later than To date.'
-    )
+    setActionError('From date cannot be later than To date.')
     return
   }
 
   setHasSearched(true)
 
+  setRows([])
+  setLoadedCount(0)
+  setHasMoreTransactions(false)
+
   if (canSeeAllTransactions) {
     await Promise.all([
-      loadTransactions(),
+      loadTransactions(true),
       loadParkSummary(),
     ])
   } else {
-    await loadTransactions()
+    await loadTransactions(true)
   }
-} 
+}
+
+async function handleLoadMore() {
+  if (!hasMoreTransactions || loadingMore) return
+
+  await loadTransactions(false)
+}
   
   const filteredRows = useMemo(() => {
   const q = search.toLowerCase().trim()
@@ -973,6 +993,26 @@ const parkSummaryTotals = useMemo(() => {
               </table>
             </div>
           )}
+          
+          {hasSearched && hasMoreTransactions ? (
+  <div style={styles.loadMoreRow}>
+    <button
+      type="button"
+      style={styles.loadMoreButton}
+      onClick={handleLoadMore}
+      disabled={loadingMore}
+    >
+      {loadingMore
+        ? 'Loading...'
+        : `Load Next ${pageSize} Transactions`}
+    </button>
+
+    <p style={styles.loadMoreText}>
+      Currently showing {loadedCount.toLocaleString()} transactions
+    </p>
+  </div>
+) : null}
+
         </section>
 
         {canSeeAllTransactions ? (
@@ -1003,7 +1043,7 @@ const parkSummaryTotals = useMemo(() => {
             ...styles.table,
             minWidth: '1250px',
           }}
-        >
+          >
           <thead>
             <tr>
               <th style={styles.th}>Park</th>
@@ -1488,4 +1528,28 @@ searchButton: {
     fontWeight: 700,
     whiteSpace: 'nowrap',
   },
+  loadMoreRow: {
+  marginTop: '20px',
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'center',
+  gap: '8px',
+},
+
+loadMoreButton: {
+  padding: '12px 18px',
+  borderRadius: '12px',
+  border: 'none',
+  background: '#4b2e83',
+  color: '#fff',
+  cursor: 'pointer',
+  fontWeight: 700,
+  fontSize: '14px',
+},
+
+loadMoreText: {
+  margin: 0,
+  fontSize: '12px',
+  color: '#7a7191',
+},
 }
