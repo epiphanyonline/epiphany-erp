@@ -32,6 +32,29 @@ type ReverseResult = {
   reversal_tx_ref: string | null
 }
 
+type ParkTransactionSummary = {
+  park_name: string
+  total_disbursement: number
+  total_savings_deposit: number
+  total_savings_withdrawal: number
+  total_processing_fee: number
+  total_card_fee: number
+  total_membership_fee: number
+}
+
+type ParkLoanRecoverySummary = {
+  park_name: string
+  loan_count: number
+  period_disbursement: number
+  period_loan_outstanding: number
+  period_recovered_amount: number
+  recovery_percentage: number
+}
+
+type ParkFinancialSummary = ParkTransactionSummary & {
+  period_loan_outstanding: number
+}
+
 function getTodayDateString() {
   const today = new Date()
   const yyyy = today.getFullYear()
@@ -66,7 +89,8 @@ export default function TransactionsPage() {
   const { staff, loading: staffLoading } = useCurrentStaff()
 
   const [rows, setRows] = useState<TransactionRow[]>([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
+const [hasSearched, setHasSearched] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
 
   const [search, setSearch] = useState('')
@@ -80,6 +104,8 @@ export default function TransactionsPage() {
 
   const [actionMessage, setActionMessage] = useState('')
   const [actionError, setActionError] = useState('')
+  const [parkSummaryRows, setParkSummaryRows] = useState<ParkFinancialSummary[]>([])
+const [parkSummaryLoading, setParkSummaryLoading] = useState(false)
 
   const canSeeAllTransactions =
     staff?.role === 'ADMIN' || staff?.role === 'SUPERVISOR'
@@ -114,64 +140,293 @@ export default function TransactionsPage() {
   }, [staffLoading, staff])
 
   async function loadTransactions() {
-    if (!staff) return
+  if (!staff) return
 
-    setLoading(true)
-    setActionError('')
+  setLoading(true)
+  setActionError('')
 
-    let query = supabase
-      .from('vw_transaction_report')
-      .select('*')
-      .gte('business_date', dateFrom)
-      .lte('business_date', dateTo)
-      .order('business_date', { ascending: false })
-      .order('posted_at', { ascending: false })
-      .limit(500)
+  try {
+    const pageSize = 1000
+    const maxRows = 10000
+    let allRows: TransactionRow[] = []
 
-    if (txType) {
-      query = query.eq('tx_type', txType)
+    for (let from = 0; from < maxRows; from += pageSize) {
+      const to = from + pageSize - 1
+
+      let query = supabase
+        .from('vw_transaction_report')
+        .select('*')
+        .gte('business_date', dateFrom)
+        .lte('business_date', dateTo)
+        .order('business_date', { ascending: false })
+        .order('posted_at', { ascending: false })
+        .range(from, to)
+
+      if (txType) {
+        query = query.eq('tx_type', txType)
+      }
+
+      if (!canSeeAllTransactions) {
+        query = query.eq('staff_name', staff.full_name)
+      }
+
+      const { data, error } = await query
+
+      if (error) {
+        throw error
+      }
+
+      const batch = (data as TransactionRow[]) || []
+      allRows = [...allRows, ...batch]
+
+      if (batch.length < pageSize) {
+        break
+      }
     }
 
-    if (!canSeeAllTransactions) {
-      query = query.eq('staff_name', staff.full_name)
+    setRows(allRows)
+  } catch (error: any) {
+    setRows([])
+    setActionError(error.message || 'Failed to load transactions.')
+  } finally {
+    setLoading(false)
+  }
+}
+
+async function loadParkSummary() {
+  if (!staff || !canSeeAllTransactions) return
+
+  setParkSummaryLoading(true)
+
+  try {
+    const params = {
+      p_from_date: dateFrom,
+      p_to_date: dateTo,
     }
 
-    const { data, error } = await query
+    const [transactionSummaryRes, recoveryRes] = await Promise.all([
+      supabase.rpc('get_transaction_park_summary', params),
+      supabase.rpc('get_park_loan_recovery', params),
+    ])
 
-    if (error) {
-      setRows([])
-      setActionError(error.message || 'Failed to load transactions.')
-      setLoading(false)
+    if (transactionSummaryRes.error) {
+      console.error(
+        'Park transaction summary error:',
+        transactionSummaryRes.error
+      )
+
+      setParkSummaryRows([])
       return
     }
 
-    setRows((data as TransactionRow[]) || [])
-    setLoading(false)
+    if (recoveryRes.error) {
+      console.error(
+        'Park recovery summary error:',
+        recoveryRes.error
+      )
+
+      setParkSummaryRows([])
+      return
+    }
+
+    const transactionRows =
+      (transactionSummaryRes.data || []) as ParkTransactionSummary[]
+
+    const recoveryRows =
+      (recoveryRes.data || []) as ParkLoanRecoverySummary[]
+
+    const normalizePark = (
+      value: string | null | undefined
+    ) => String(value || '').trim().toLowerCase()
+
+    const recoveryMap = new Map(
+      recoveryRows.map((row) => [
+        normalizePark(row.park_name),
+        row,
+      ])
+    )
+
+    const merged: ParkFinancialSummary[] =
+      transactionRows.map((row) => {
+        const recovery = recoveryMap.get(
+          normalizePark(row.park_name)
+        )
+
+        return {
+          ...row,
+
+          total_disbursement: Number(
+            row.total_disbursement || 0
+          ),
+
+          total_savings_deposit: Number(
+            row.total_savings_deposit || 0
+          ),
+
+          total_savings_withdrawal: Number(
+            row.total_savings_withdrawal || 0
+          ),
+
+          total_processing_fee: Number(
+            row.total_processing_fee || 0
+          ),
+
+          total_card_fee: Number(
+            row.total_card_fee || 0
+          ),
+
+          total_membership_fee: Number(
+            row.total_membership_fee || 0
+          ),
+
+          period_loan_outstanding: Number(
+            recovery?.period_loan_outstanding || 0
+          ),
+        }
+      })
+
+    /*
+      Include parks that have loan recovery information
+      but do not appear in the transaction summary.
+    */
+    recoveryRows.forEach((recovery) => {
+      const alreadyExists = merged.some(
+        (row) =>
+          normalizePark(row.park_name) ===
+          normalizePark(recovery.park_name)
+      )
+
+      if (!alreadyExists) {
+        merged.push({
+          park_name: recovery.park_name,
+
+          total_disbursement: Number(
+            recovery.period_disbursement || 0
+          ),
+
+          total_savings_deposit: 0,
+          total_savings_withdrawal: 0,
+          total_processing_fee: 0,
+          total_card_fee: 0,
+          total_membership_fee: 0,
+
+          period_loan_outstanding: Number(
+            recovery.period_loan_outstanding || 0
+          ),
+        })
+      }
+    })
+
+    merged.sort(
+      (a, b) =>
+        Number(b.total_disbursement || 0) -
+        Number(a.total_disbursement || 0)
+    )
+
+    setParkSummaryRows(merged)
+  } catch (error) {
+    console.error('Park summary unexpected error:', error)
+    setParkSummaryRows([])
+  } finally {
+    setParkSummaryLoading(false)
+  }
+}
+
+async function handleSearchTransactions() {
+  if (!staff) return
+
+  setActionError('')
+  setActionMessage('')
+
+  if (!dateFrom || !dateTo) {
+    setActionError(
+      'Please select both From and To dates.'
+    )
+    return
   }
 
-  useEffect(() => {
-    if (!staffLoading && staff) {
-      loadTransactions()
-    }
-  }, [staffLoading, staff, txType, dateFrom, dateTo, canSeeAllTransactions])
+  if (dateFrom > dateTo) {
+    setActionError(
+      'From date cannot be later than To date.'
+    )
+    return
+  }
 
+  setHasSearched(true)
+
+  if (canSeeAllTransactions) {
+    await Promise.all([
+      loadTransactions(),
+      loadParkSummary(),
+    ])
+  } else {
+    await loadTransactions()
+  }
+} 
+  
   const filteredRows = useMemo(() => {
-    const q = search.toLowerCase().trim()
-    if (!q) return rows
+  const q = search.toLowerCase().trim()
 
-    return rows.filter((row) => {
-      return (
-        (row.tx_ref || '').toLowerCase().includes(q) ||
-        (row.member_code || '').toLowerCase().includes(q) ||
-        (row.member_name || '').toLowerCase().includes(q) ||
-        (row.staff_name || '').toLowerCase().includes(q) ||
-        (row.park_name || '').toLowerCase().includes(q) ||
-        (row.tx_type || '').toLowerCase().includes(q) ||
-        (row.sub_type || '').toLowerCase().includes(q) ||
-        (row.reference_text || '').toLowerCase().includes(q)
+  if (!q) return rows
+
+  return rows.filter((row) => {
+    return (
+      (row.tx_ref || '').toLowerCase().includes(q) ||
+      (row.member_code || '').toLowerCase().includes(q) ||
+      (row.member_name || '').toLowerCase().includes(q) ||
+      (row.staff_name || '').toLowerCase().includes(q) ||
+      (row.park_name || '').toLowerCase().includes(q) ||
+      (row.tx_type || '').toLowerCase().includes(q) ||
+      (row.sub_type || '').toLowerCase().includes(q) ||
+      (row.reference_text || '').toLowerCase().includes(q)
+    )
+  })
+}, [rows, search])
+
+const parkSummaryTotals = useMemo(() => {
+  return parkSummaryRows.reduce(
+    (totals, row) => {
+      totals.total_disbursement += Number(
+        row.total_disbursement || 0
       )
-    })
-  }, [rows, search])
+
+      totals.total_savings_deposit += Number(
+        row.total_savings_deposit || 0
+      )
+
+      totals.total_savings_withdrawal += Number(
+        row.total_savings_withdrawal || 0
+      )
+
+      totals.period_loan_outstanding += Number(
+        row.period_loan_outstanding || 0
+      )
+
+      totals.total_processing_fee += Number(
+        row.total_processing_fee || 0
+      )
+
+      totals.total_card_fee += Number(
+        row.total_card_fee || 0
+      )
+
+      totals.total_membership_fee += Number(
+        row.total_membership_fee || 0
+      )
+
+      return totals
+    },
+    {
+      total_disbursement: 0,
+      total_savings_deposit: 0,
+      total_savings_withdrawal: 0,
+      period_loan_outstanding: 0,
+      total_processing_fee: 0,
+      total_card_fee: 0,
+      total_membership_fee: 0,
+    }
+  )
+}, [parkSummaryRows])
 
   const effectiveRows = useMemo(() => {
     return filteredRows.filter(isEffectiveOperationalRow)
@@ -483,6 +738,19 @@ export default function TransactionsPage() {
               </div>
             </div>
 
+            <div style={styles.searchButtonRow}>
+  <button
+    type="button"
+    style={styles.searchButton}
+    onClick={handleSearchTransactions}
+    disabled={loading || parkSummaryLoading}
+  >
+    {loading || parkSummaryLoading
+      ? 'Searching...'
+      : 'Search Transactions'}
+  </button>
+</div>
+
             {canSeeAllTransactions ? (
               <div style={styles.downloadRow}>
                 <button
@@ -497,10 +765,14 @@ export default function TransactionsPage() {
             ) : null}
           </div>
 
-          {loading ? (
-            <p style={styles.noteText}>Loading transactions...</p>
-          ) : !filteredRows.length ? (
-            <p style={styles.noteText}>No transactions found.</p>
+          {!hasSearched ? (
+  <p style={styles.noteText}>
+    Select your transaction type and date range, then click Search Transactions.
+  </p>
+) : loading ? (
+  <p style={styles.noteText}>Loading transactions...</p>
+) : !filteredRows.length ? (
+  <p style={styles.noteText}>No transactions found for the selected period.</p>
           ) : isMobile ? (
             <div style={styles.mobileList}>
               {filteredRows.map((row) => {
@@ -702,6 +974,142 @@ export default function TransactionsPage() {
             </div>
           )}
         </section>
+
+        {canSeeAllTransactions ? (
+  <section style={styles.sectionCard}>
+    <div style={{ marginBottom: '18px' }}>
+      <h2 style={styles.sectionTitle}>Park Financial Summary</h2>
+
+      <p style={styles.noteText}>
+        Summary for {dateFrom} to {dateTo}. Loan outstanding represents the
+        current unpaid balance of loans disbursed within this selected period.
+      </p>
+    </div>
+
+    {!hasSearched ? (
+  <p style={styles.noteText}>
+    Run a transaction search to view the park financial summary.
+  </p>
+) : parkSummaryLoading ? (
+  <p style={styles.noteText}>Loading park summary...</p>
+) : !parkSummaryRows.length ? (
+      <p style={styles.noteText}>
+        No park summary records found for this period.
+      </p>
+    ) : (
+      <div style={styles.tableWrap}>
+        <table
+          style={{
+            ...styles.table,
+            minWidth: '1250px',
+          }}
+        >
+          <thead>
+            <tr>
+              <th style={styles.th}>Park</th>
+              <th style={styles.th}>Disbursement</th>
+              <th style={styles.th}>Savings Deposit</th>
+              <th style={styles.th}>Savings Withdrawal</th>
+              <th style={styles.th}>Loan Outstanding</th>
+              <th style={styles.th}>Processing Fee</th>
+              <th style={styles.th}>Card Fee</th>
+              <th style={styles.th}>Membership Fee</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            {parkSummaryRows.map((row) => (
+              <tr key={row.park_name}>
+                <td
+                  style={{
+                    ...styles.td,
+                    fontWeight: 800,
+                    color: '#4b2e83',
+                  }}
+                >
+                  {row.park_name}
+                </td>
+
+                <td style={styles.td}>
+                  {formatAmount(row.total_disbursement)}
+                </td>
+
+                <td style={styles.td}>
+                  {formatAmount(row.total_savings_deposit)}
+                </td>
+
+                <td style={styles.td}>
+                  {formatAmount(row.total_savings_withdrawal)}
+                </td>
+
+                <td style={styles.td}>
+                  {formatAmount(row.period_loan_outstanding)}
+                </td>
+
+                <td style={styles.td}>
+                  {formatAmount(row.total_processing_fee)}
+                </td>
+
+                <td style={styles.td}>
+                  {formatAmount(row.total_card_fee)}
+                </td>
+
+                <td style={styles.td}>
+                  {formatAmount(row.total_membership_fee)}
+                </td>
+              </tr>
+            ))}
+
+            <tr
+              style={{
+                background: '#f3effb',
+                borderTop: '2px solid #d7cdee',
+              }}
+            >
+              <td
+                style={{
+                  ...styles.td,
+                  fontWeight: 900,
+                  color: '#2d1b69',
+                }}
+              >
+                TOTAL
+              </td>
+
+              <td style={{ ...styles.td, fontWeight: 900 }}>
+                {formatAmount(parkSummaryTotals.total_disbursement)}
+              </td>
+
+              <td style={{ ...styles.td, fontWeight: 900 }}>
+                {formatAmount(parkSummaryTotals.total_savings_deposit)}
+              </td>
+
+              <td style={{ ...styles.td, fontWeight: 900 }}>
+                {formatAmount(parkSummaryTotals.total_savings_withdrawal)}
+              </td>
+
+              <td style={{ ...styles.td, fontWeight: 900 }}>
+                {formatAmount(parkSummaryTotals.period_loan_outstanding)}
+              </td>
+
+              <td style={{ ...styles.td, fontWeight: 900 }}>
+                {formatAmount(parkSummaryTotals.total_processing_fee)}
+              </td>
+
+              <td style={{ ...styles.td, fontWeight: 900 }}>
+                {formatAmount(parkSummaryTotals.total_card_fee)}
+              </td>
+
+              <td style={{ ...styles.td, fontWeight: 900 }}>
+                {formatAmount(parkSummaryTotals.total_membership_fee)}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    )}
+  </section>
+) : null}
       </div>
     </main>
   )
@@ -873,6 +1281,21 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
     fontWeight: 700,
   },
+  searchButtonRow: {
+  display: 'flex',
+  justifyContent: 'flex-start',
+},
+
+searchButton: {
+  padding: '12px 18px',
+  borderRadius: '12px',
+  border: 'none',
+  background: '#4b2e83',
+  color: '#fff',
+  cursor: 'pointer',
+  fontWeight: 700,
+  fontSize: '15px',
+},
   downloadRow: {
     display: 'flex',
     justifyContent: 'flex-start',
