@@ -55,6 +55,19 @@ type ParkFinancialSummary = ParkTransactionSummary & {
   period_loan_outstanding: number
 }
 
+type ParkOutstandingLoanRow = {
+  loan_account_id: string
+  member_code: string
+  member_name: string
+  phone: string | null
+  specific_park: string | null
+  disbursed_date: string
+  maturity_date: string | null
+  principal_amount: number
+  outstanding_balance: number
+  loan_status: string | null
+}
+
 function getTodayDateString() {
   const today = new Date()
   const yyyy = today.getFullYear()
@@ -110,6 +123,11 @@ const [pageSize] = useState(500)
 const [loadedCount, setLoadedCount] = useState(0)
 const [hasMoreTransactions, setHasMoreTransactions] = useState(false)
 const [loadingMore, setLoadingMore] = useState(false)
+
+const [selectedOutstandingPark, setSelectedOutstandingPark] = useState<string | null>(null)
+const [parkOutstandingLoans, setParkOutstandingLoans] = useState<ParkOutstandingLoanRow[]>([])
+const [loadingParkOutstanding, setLoadingParkOutstanding] = useState(false)
+const [parkOutstandingError, setParkOutstandingError] = useState('')
 
   const canSeeAllTransactions =
     staff?.role === 'ADMIN' || staff?.role === 'SUPERVISOR'
@@ -368,6 +386,10 @@ async function handleSearchTransactions() {
   setLoadedCount(0)
   setHasMoreTransactions(false)
 
+  setSelectedOutstandingPark(null)
+  setParkOutstandingLoans([])
+  setParkOutstandingError('')
+
   if (canSeeAllTransactions) {
     await Promise.all([
       loadTransactions(true),
@@ -384,6 +406,44 @@ async function handleLoadMore() {
   await loadTransactions(false)
 }
   
+
+async function loadParkOutstandingLoans(parkName: string) {
+  if (!canSeeAllTransactions) return
+
+  setSelectedOutstandingPark(parkName)
+  setLoadingParkOutstanding(true)
+  setParkOutstandingError('')
+  setParkOutstandingLoans([])
+
+  try {
+    const { data, error } = await supabase.rpc(
+      'get_park_period_outstanding_loans',
+      {
+        p_from_date: dateFrom,
+        p_to_date: dateTo,
+        p_park_name: parkName,
+      }
+    )
+
+    if (error) throw error
+
+    const loans = ((data || []) as ParkOutstandingLoanRow[]).map((row) => ({
+      ...row,
+      principal_amount: Number(row.principal_amount || 0),
+      outstanding_balance: Number(row.outstanding_balance || 0),
+    }))
+
+    setParkOutstandingLoans(loans)
+  } catch (error: any) {
+    console.error('Outstanding loan drilldown error:', error)
+    setParkOutstandingError(
+      error?.message || 'Failed to load outstanding loan breakdown.'
+    )
+  } finally {
+    setLoadingParkOutstanding(false)
+  }
+}
+
   const filteredRows = useMemo(() => {
   const q = search.toLowerCase().trim()
 
@@ -566,6 +626,69 @@ const parkSummaryTotals = useMemo(() => {
 
     const safeType = txType ? txType.toLowerCase() : 'all'
     doc.save(`transactions-${safeType}-${dateFrom}-to-${dateTo}.pdf`)
+  }
+
+
+  function handleDownloadParkSummaryPdf() {
+    if (!canSeeAllTransactions || !parkSummaryRows.length) return
+
+    const doc = new jsPDF('landscape', 'mm', 'a4')
+    const generatedAt = new Date().toLocaleString()
+
+    doc.setFontSize(18)
+    doc.text('Epiphany ERP - Park Financial Summary', 14, 15)
+
+    doc.setFontSize(10)
+    doc.text(`Generated: ${generatedAt}`, 14, 22)
+    doc.text(`Period: ${dateFrom} to ${dateTo}`, 14, 28)
+
+    const body = parkSummaryRows.map((row) => [
+      row.park_name || '-',
+      formatAmount(Number(row.total_disbursement || 0)),
+      formatAmount(Number(row.total_savings_deposit || 0)),
+      formatAmount(Number(row.total_savings_withdrawal || 0)),
+      formatAmount(Number(row.period_loan_outstanding || 0)),
+      formatAmount(Number(row.total_processing_fee || 0)),
+      formatAmount(Number(row.total_card_fee || 0)),
+      formatAmount(Number(row.total_membership_fee || 0)),
+    ])
+
+    body.push([
+      'TOTAL',
+      formatAmount(parkSummaryTotals.total_disbursement),
+      formatAmount(parkSummaryTotals.total_savings_deposit),
+      formatAmount(parkSummaryTotals.total_savings_withdrawal),
+      formatAmount(parkSummaryTotals.period_loan_outstanding),
+      formatAmount(parkSummaryTotals.total_processing_fee),
+      formatAmount(parkSummaryTotals.total_card_fee),
+      formatAmount(parkSummaryTotals.total_membership_fee),
+    ])
+
+    autoTable(doc, {
+      startY: 34,
+      head: [[
+        'Park',
+        'Disbursement',
+        'Savings Deposit',
+        'Savings Withdrawal',
+        'Loan Outstanding',
+        'Processing Fee',
+        'Card Fee',
+        'Membership Fee',
+      ]],
+      body,
+      styles: {
+        fontSize: 8,
+        cellPadding: 2,
+        overflow: 'linebreak',
+      },
+      headStyles: {
+        fillColor: [75, 46, 131],
+      },
+      margin: { top: 34, right: 10, bottom: 10, left: 10 },
+    })
+
+    doc.save(`park-financial-summary-${dateFrom}-to-${dateTo}.pdf`)
   }
 
   async function handleReverseSubmit() {
@@ -1017,13 +1140,25 @@ const parkSummaryTotals = useMemo(() => {
 
         {canSeeAllTransactions ? (
   <section style={styles.sectionCard}>
-    <div style={{ marginBottom: '18px' }}>
-      <h2 style={styles.sectionTitle}>Park Financial Summary</h2>
+    <div style={styles.summaryHeaderRow}>
+      <div>
+        <h2 style={styles.sectionTitle}>Park Financial Summary</h2>
 
-      <p style={styles.noteText}>
-        Summary for {dateFrom} to {dateTo}. Loan outstanding represents the
-        current unpaid balance of loans disbursed within this selected period.
-      </p>
+        <p style={styles.noteText}>
+          Summary for {dateFrom} to {dateTo}. Loan outstanding represents the
+          current unpaid balance of loans disbursed within this selected period.
+          Click an outstanding amount to view the customer-level breakdown.
+        </p>
+      </div>
+
+      <button
+        type="button"
+        style={styles.downloadButton}
+        onClick={handleDownloadParkSummaryPdf}
+        disabled={!parkSummaryRows.length || parkSummaryLoading}
+      >
+        Download Summary PDF
+      </button>
     </div>
 
     {!hasSearched ? (
@@ -1083,7 +1218,18 @@ const parkSummaryTotals = useMemo(() => {
                 </td>
 
                 <td style={styles.td}>
-                  {formatAmount(row.period_loan_outstanding)}
+                  {Number(row.period_loan_outstanding || 0) > 0 ? (
+                    <button
+                      type="button"
+                      style={styles.outstandingLink}
+                      onClick={() => loadParkOutstandingLoans(row.park_name)}
+                      title={`View outstanding customers for ${row.park_name}`}
+                    >
+                      {formatAmount(row.period_loan_outstanding)}
+                    </button>
+                  ) : (
+                    formatAmount(0)
+                  )}
                 </td>
 
                 <td style={styles.td}>
@@ -1150,6 +1296,184 @@ const parkSummaryTotals = useMemo(() => {
     )}
   </section>
 ) : null}
+
+        {canSeeAllTransactions && selectedOutstandingPark ? (
+          <section style={styles.sectionCard}>
+            <div style={styles.summaryHeaderRow}>
+              <div>
+                <h2 style={styles.sectionTitle}>
+                  {selectedOutstandingPark} - Outstanding Loan Breakdown
+                </h2>
+
+                <p style={styles.noteText}>
+                  Customers with an unpaid balance from loans disbursed between{' '}
+                  {dateFrom} and {dateTo}.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                style={styles.cancelButton}
+                onClick={() => {
+                  setSelectedOutstandingPark(null)
+                  setParkOutstandingLoans([])
+                  setParkOutstandingError('')
+                }}
+              >
+                Close Breakdown
+              </button>
+            </div>
+
+            {loadingParkOutstanding ? (
+              <p style={styles.noteText}>Loading outstanding customers...</p>
+            ) : parkOutstandingError ? (
+              <div style={styles.errorBox}>
+                <strong>Error:</strong> {parkOutstandingError}
+              </div>
+            ) : !parkOutstandingLoans.length ? (
+              <p style={styles.noteText}>
+                No outstanding loans found for this park and selected period.
+              </p>
+            ) : (
+              <>
+                <div style={styles.drilldownSummaryRow}>
+                  <div style={styles.drilldownStat}>
+                    <span style={styles.drilldownStatLabel}>Loans</span>
+                    <strong style={styles.drilldownStatValue}>
+                      {parkOutstandingLoans.length.toLocaleString()}
+                    </strong>
+                  </div>
+
+                  <div style={styles.drilldownStat}>
+                    <span style={styles.drilldownStatLabel}>Amount Disbursed</span>
+                    <strong style={styles.drilldownStatValue}>
+                      {formatAmount(
+                        parkOutstandingLoans.reduce(
+                          (sum, loan) => sum + Number(loan.principal_amount || 0),
+                          0
+                        )
+                      )}
+                    </strong>
+                  </div>
+
+                  <div style={styles.drilldownStat}>
+                    <span style={styles.drilldownStatLabel}>Outstanding</span>
+                    <strong style={{ ...styles.drilldownStatValue, color: '#b42318' }}>
+                      {formatAmount(
+                        parkOutstandingLoans.reduce(
+                          (sum, loan) => sum + Number(loan.outstanding_balance || 0),
+                          0
+                        )
+                      )}
+                    </strong>
+                  </div>
+                </div>
+
+                <div style={styles.tableWrap}>
+                  <table
+                    style={{
+                      ...styles.table,
+                      minWidth: '1150px',
+                    }}
+                  >
+                    <thead>
+                      <tr>
+                        <th style={styles.th}>Member</th>
+                        <th style={styles.th}>Member Code</th>
+                        <th style={styles.th}>Phone</th>
+                        <th style={styles.th}>Specific Park</th>
+                        <th style={styles.th}>Disbursed</th>
+                        <th style={styles.th}>Maturity</th>
+                        <th style={styles.th}>Amount Disbursed</th>
+                        <th style={styles.th}>Outstanding</th>
+                        <th style={styles.th}>Status</th>
+                      </tr>
+                    </thead>
+
+                    <tbody>
+                      {parkOutstandingLoans.map((loan) => (
+                        <tr key={loan.loan_account_id}>
+                          <td style={styles.td}>
+                            <button
+                              type="button"
+                              style={styles.memberDrilldownLink}
+                              onClick={() => openMember(loan.member_code)}
+                            >
+                              {loan.member_name || '-'}
+                            </button>
+                          </td>
+
+                          <td style={styles.td}>{loan.member_code || '-'}</td>
+                          <td style={styles.td}>{loan.phone || '-'}</td>
+                          <td style={styles.td}>{loan.specific_park || '-'}</td>
+                          <td style={styles.td}>{loan.disbursed_date || '-'}</td>
+                          <td style={styles.td}>{loan.maturity_date || '-'}</td>
+                          <td style={styles.td}>
+                            {formatAmount(Number(loan.principal_amount || 0))}
+                          </td>
+                          <td
+                            style={{
+                              ...styles.td,
+                              color: '#b42318',
+                              fontWeight: 800,
+                            }}
+                          >
+                            {formatAmount(Number(loan.outstanding_balance || 0))}
+                          </td>
+                          <td style={styles.td}>{loan.loan_status || '-'}</td>
+                        </tr>
+                      ))}
+
+                      <tr
+                        style={{
+                          background: '#f3effb',
+                          borderTop: '2px solid #d7cdee',
+                        }}
+                      >
+                        <td
+                          colSpan={6}
+                          style={{
+                            ...styles.td,
+                            fontWeight: 900,
+                            color: '#2d1b69',
+                          }}
+                        >
+                          TOTAL
+                        </td>
+
+                        <td style={{ ...styles.td, fontWeight: 900 }}>
+                          {formatAmount(
+                            parkOutstandingLoans.reduce(
+                              (sum, loan) => sum + Number(loan.principal_amount || 0),
+                              0
+                            )
+                          )}
+                        </td>
+
+                        <td
+                          style={{
+                            ...styles.td,
+                            fontWeight: 900,
+                            color: '#b42318',
+                          }}
+                        >
+                          {formatAmount(
+                            parkOutstandingLoans.reduce(
+                              (sum, loan) => sum + Number(loan.outstanding_balance || 0),
+                              0
+                            )
+                          )}
+                        </td>
+
+                        <td style={styles.td}>—</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+          </section>
+        ) : null}
       </div>
     </main>
   )
@@ -1552,4 +1876,60 @@ loadMoreText: {
   fontSize: '12px',
   color: '#7a7191',
 },
+
+  summaryHeaderRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: '16px',
+    flexWrap: 'wrap',
+    marginBottom: '18px',
+  },
+  outstandingLink: {
+    border: 'none',
+    background: 'transparent',
+    padding: 0,
+    color: '#4b2e83',
+    fontWeight: 800,
+    textDecoration: 'underline',
+    cursor: 'pointer',
+    fontSize: 'inherit',
+  },
+  memberDrilldownLink: {
+    border: 'none',
+    background: 'transparent',
+    padding: 0,
+    color: '#4b2e83',
+    fontWeight: 700,
+    textDecoration: 'underline',
+    cursor: 'pointer',
+    fontSize: '14px',
+    textAlign: 'left',
+  },
+  drilldownSummaryRow: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+    gap: '12px',
+    marginBottom: '18px',
+  },
+  drilldownStat: {
+    border: '1px solid #ece7f7',
+    borderRadius: '14px',
+    background: '#faf8fe',
+    padding: '14px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+  },
+  drilldownStatLabel: {
+    fontSize: '12px',
+    color: '#7a7191',
+    fontWeight: 700,
+  },
+  drilldownStatValue: {
+    fontSize: '20px',
+    color: '#2d1b69',
+    fontWeight: 800,
+  },
+
 }
