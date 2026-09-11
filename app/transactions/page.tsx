@@ -691,6 +691,146 @@ const parkSummaryTotals = useMemo(() => {
     doc.save(`park-financial-summary-${dateFrom}-to-${dateTo}.pdf`)
   }
 
+  function handleDownloadParkOutstandingPdf() {
+  if (!selectedOutstandingPark || !parkOutstandingLoans.length) return
+
+  const doc = new jsPDF('landscape', 'mm', 'a4')
+  const generatedAt = new Date().toLocaleString()
+
+  const totalDisbursed = parkOutstandingLoans.reduce(
+    (sum, loan) => sum + Number(loan.principal_amount || 0),
+    0
+  )
+
+  const totalOutstanding = parkOutstandingLoans.reduce(
+    (sum, loan) => sum + Number(loan.outstanding_balance || 0),
+    0
+  )
+
+  doc.setFontSize(18)
+  doc.text(
+    `Epiphany ERP - ${selectedOutstandingPark} Outstanding Loan Breakdown`,
+    14,
+    15
+  )
+
+  doc.setFontSize(10)
+
+  doc.text(
+    `Period: ${dateFrom} to ${dateTo}`,
+    14,
+    23
+  )
+
+  doc.text(
+    `Generated: ${generatedAt}`,
+    14,
+    29
+  )
+
+  doc.text(
+    `Loans: ${parkOutstandingLoans.length.toLocaleString()}`,
+    14,
+    35
+  )
+
+  doc.text(
+    `Amount Disbursed: ${formatAmount(totalDisbursed)}`,
+    70,
+    35
+  )
+
+  doc.text(
+    `Outstanding: ${formatAmount(totalOutstanding)}`,
+    145,
+    35
+  )
+
+  const body = parkOutstandingLoans.map((loan, index) => [
+    String(index + 1),
+    loan.member_name || '-',
+    loan.member_code || '-',
+    loan.phone || '-',
+    loan.specific_park || '-',
+    loan.disbursed_date || '-',
+    loan.maturity_date || '-',
+    formatAmount(Number(loan.principal_amount || 0)),
+    formatAmount(Number(loan.outstanding_balance || 0)),
+    loan.loan_status || '-',
+  ])
+
+  body.push([
+    '',
+    'TOTAL',
+    '',
+    '',
+    '',
+    '',
+    '',
+    formatAmount(totalDisbursed),
+    formatAmount(totalOutstanding),
+    '',
+  ])
+
+  autoTable(doc, {
+    startY: 42,
+
+    head: [[
+      'S/N',
+      'Member',
+      'Member Code',
+      'Phone',
+      'Specific Park',
+      'Disbursed',
+      'Maturity',
+      'Amount Disbursed',
+      'Outstanding',
+      'Status',
+    ]],
+
+    body,
+
+    styles: {
+      fontSize: 8,
+      cellPadding: 2,
+      overflow: 'linebreak',
+    },
+
+    headStyles: {
+      fillColor: [75, 46, 131],
+    },
+
+    columnStyles: {
+      0: { cellWidth: 10 },
+      1: { cellWidth: 38 },
+      2: { cellWidth: 28 },
+      3: { cellWidth: 26 },
+      4: { cellWidth: 28 },
+      5: { cellWidth: 24 },
+      6: { cellWidth: 24 },
+      7: { cellWidth: 30 },
+      8: { cellWidth: 30 },
+      9: { cellWidth: 22 },
+    },
+
+    margin: {
+      top: 42,
+      right: 10,
+      bottom: 10,
+      left: 10,
+    },
+  })
+
+  const safeParkName = selectedOutstandingPark
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+
+  doc.save(
+    `${safeParkName}-outstanding-loans-${dateFrom}-to-${dateTo}.pdf`
+  )
+}
+
   async function handleReverseSubmit() {
     if (!staff || !selectedTx) return
 
@@ -1311,18 +1451,32 @@ const parkSummaryTotals = useMemo(() => {
                 </p>
               </div>
 
-              <button
-                type="button"
-                style={styles.cancelButton}
-                onClick={() => {
-                  setSelectedOutstandingPark(null)
-                  setParkOutstandingLoans([])
-                  setParkOutstandingError('')
-                }}
-              >
-                Close Breakdown
-              </button>
-            </div>
+              <div style={styles.breakdownActionRow}>
+  <button
+    type="button"
+    style={styles.downloadButton}
+    onClick={handleDownloadParkOutstandingPdf}
+    disabled={
+      loadingParkOutstanding ||
+      !parkOutstandingLoans.length
+    }
+  >
+    Download Breakdown PDF
+  </button>
+
+  <button
+    type="button"
+    style={styles.cancelButton}
+    onClick={() => {
+      setSelectedOutstandingPark(null)
+      setParkOutstandingLoans([])
+      setParkOutstandingError('')
+    }}
+  >
+    Close Breakdown
+  </button>
+</div>
+</div>
 
             {loadingParkOutstanding ? (
               <p style={styles.noteText}>Loading outstanding customers...</p>
@@ -1931,5 +2085,11 @@ loadMoreText: {
     color: '#2d1b69',
     fontWeight: 800,
   },
+  breakdownActionRow: {
+  display: 'flex',
+  gap: '10px',
+  flexWrap: 'wrap',
+  alignItems: 'center',
+},
 
 }
