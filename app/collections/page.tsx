@@ -45,7 +45,7 @@ type CollectionRow = {
   missed_count: number
   partial_count: number
   paid_count: number
-  display_status: 'PAID' | 'PARTIAL' | 'MISSED' | 'OVERDUE'
+  display_status: 'PAID' | 'PARTIAL' | 'MISSED' | 'OVERDUE' | 'NO COLLECTION DUE'
 }
 
 type ParkSummaryRow = {
@@ -63,20 +63,14 @@ type ParkSummaryRow = {
 }
 
 function getTodayDateString() {
-  const today = new Date()
-  const yyyy = today.getFullYear()
-  const mm = String(today.getMonth() + 1).padStart(2, '0')
-  const dd = String(today.getDate()).padStart(2, '0')
-  return `${yyyy}-${mm}-${dd}`
+  return new Date().toLocaleDateString('sv-SE', { timeZone: 'Africa/Lagos' })
 }
 
 function getYesterdayDateString() {
-  const d = new Date()
-  d.setDate(d.getDate() - 1)
-  const yyyy = d.getFullYear()
-  const mm = String(d.getMonth() + 1).padStart(2, '0')
-  const dd = String(d.getDate()).padStart(2, '0')
-  return `${yyyy}-${mm}-${dd}`
+  const today = getTodayDateString()
+  const d = new Date(`${today}T12:00:00Z`)
+  d.setUTCDate(d.getUTCDate() - 1)
+  return d.toISOString().slice(0, 10)
 }
 
 function chunkArray<T>(items: T[], size: number) {
@@ -236,133 +230,40 @@ export default function CollectionsPage() {
       const canSeeAll =
         staffScope.role === 'ADMIN' || staffScope.role === 'SUPERVISOR'
 
-      let baseQuery = supabase
-        .from('vw_daily_collections')
-        .select(
-          'loan_id, member_id, member_code, member_name, park_id, park_name, expected_daily_amount, outstanding_balance, due_date, loan_status'
-        )
-        .order('member_name', { ascending: true })
-
-      if (!canSeeAll) {
-        if (!staffScope.park_id) {
-          setRows([])
-          setErrorText('Your staff account is not linked to a park.')
-          setLoading(false)
-          return
-        }
-
-        baseQuery = baseQuery.eq('park_id', staffScope.park_id)
-      }
-
-      const { data: baseData, error: baseError } = await baseQuery
-
-      if (baseError || !baseData) {
+      if (!canSeeAll && !staffScope.park_id) {
         setRows([])
-        setErrorText(baseError?.message || 'Failed to load collection base data.')
+        setErrorText('Your staff account is not linked to a park.')
         setLoading(false)
         return
       }
 
-      const baseRows = (baseData || []) as DailyCollectionBaseRow[]
-      const loanIds = baseRows.map((row) => row.loan_id)
-
-      if (!loanIds.length) {
-        setRows([])
-        setLoading(false)
-        return
-      }
-
-      const repaymentByLoanAndDate = new Map<string, number>()
-      const loanIdChunks = chunkArray(loanIds, 100)
-
-      for (const chunk of loanIdChunks) {
-        const { data: txData, error: txError } = await supabase
-          .from('vw_transaction_report')
-          .select('loan_account_id, amount, business_date, tx_type')
-          .eq('tx_type', 'LOAN_REPAYMENT')
-          .gte('business_date', dateFrom)
-          .lte('business_date', dateTo)
-          .in('loan_account_id', chunk)
-
-        if (txError) {
-          setErrorText(txError.message || 'Failed to load repayment transactions.')
-          continue
-        }
-
-        ;(txData as RepaymentTransaction[] | null)?.forEach((tx) => {
-          if (!tx.loan_account_id || !tx.business_date) return
-          const key = `${tx.loan_account_id}__${tx.business_date}`
-          const current = repaymentByLoanAndDate.get(key) || 0
-          repaymentByLoanAndDate.set(key, current + Number(tx.amount || 0))
-        })
-      }
-
-      const selectedDates = buildDateList(dateFrom, dateTo)
-      const dayCount = countDaysInclusive(dateFrom, dateTo)
-
-      const result: CollectionRow[] = baseRows.map((row) => {
-        const expectedDaily = Number(row.expected_daily_amount || 0)
-        const expectedTotal = expectedDaily * dayCount
-        const outstandingBalance = Number(row.outstanding_balance || 0)
-
-        let actualTotal = 0
-        let missedCount = 0
-        let partialCount = 0
-        let paidCount = 0
-        let overdueSeen = false
-
-        for (const day of selectedDates) {
-          const key = `${row.loan_id}__${day}`
-          const actualForDay = Number(repaymentByLoanAndDate.get(key) || 0)
-          actualTotal += actualForDay
-
-          const dayStatus = getDayStatus(
-            row.due_date,
-            outstandingBalance,
-            expectedDaily,
-            actualForDay,
-            day
-          )
-
-          if (dayStatus === 'MISSED') missedCount += 1
-          if (dayStatus === 'PARTIAL') partialCount += 1
-          if (dayStatus === 'PAID') paidCount += 1
-          if (dayStatus === 'OVERDUE') overdueSeen = true
-        }
-
-        const variance = actualTotal - expectedTotal
-
-        let displayStatus: 'PAID' | 'PARTIAL' | 'MISSED' | 'OVERDUE' = 'MISSED'
-
-        if (overdueSeen) {
-          displayStatus = 'OVERDUE'
-        } else if (actualTotal >= expectedTotal && expectedTotal > 0) {
-          displayStatus = 'PAID'
-        } else if (actualTotal > 0 && actualTotal < expectedTotal) {
-          displayStatus = 'PARTIAL'
-        } else {
-          displayStatus = 'MISSED'
-        }
-
-        return {
-          loan_id: row.loan_id,
-          member_id: row.member_id,
-          member_code: row.member_code || '-',
-          member_name: row.member_name || 'Unknown Member',
-          park_id: row.park_id,
-          park_name: row.park_name || '-',
-          expected_daily_amount: expectedDaily,
-          expected_total_for_range: expectedTotal,
-          actual_paid_for_range: actualTotal,
-          variance,
-          outstanding_balance: outstandingBalance,
-          due_date: row.due_date,
-          missed_count: missedCount,
-          partial_count: partialCount,
-          paid_count: paidCount,
-          display_status: displayStatus,
-        }
+      // Single Supabase reporting calculation for officer and supervisor roles.
+      // The database applies the same holidays, disbursement dates, maturity dates
+      // and reversal handling everywhere. No calendar-day multiplication here.
+      const { data, error } = await supabase.rpc('epiphany_collection_report', {
+        p_date_from: dateFrom,
+        p_date_to: dateTo,
+        p_park_id: canSeeAll ? null : staffScope.park_id,
       })
+
+      if (error) {
+        setRows([])
+        setErrorText(error.message || 'Failed to load working-day collections.')
+        setLoading(false)
+        return
+      }
+
+      const result = ((data || []) as CollectionRow[]).map((row) => ({
+        ...row,
+        expected_daily_amount: Number(row.expected_daily_amount || 0),
+        expected_total_for_range: Number(row.expected_total_for_range || 0),
+        actual_paid_for_range: Number(row.actual_paid_for_range || 0),
+        variance: Number(row.variance || 0),
+        outstanding_balance: Number(row.outstanding_balance || 0),
+        missed_count: Number(row.missed_count || 0),
+        partial_count: Number(row.partial_count || 0),
+        paid_count: Number(row.paid_count || 0),
+      }))
 
       setRows(result)
       setLoading(false)
