@@ -1,5 +1,7 @@
 'use client'
 
+import { postFinancial } from '@/lib/financial-post'
+
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useCurrentStaff } from '../../lib/useCurrentStaff'
@@ -184,7 +186,7 @@ export default function AccountSummaryPage() {
 
     setPostingExpense(true)
 
-    const { data, error } = await supabase.rpc('post_expense', {
+    const { data, error } = await postFinancial('post_expense', {
       p_staff_code: staff.staff_code,
       p_amount: amount,
       p_expense_name: expenseName.trim(),
@@ -233,7 +235,7 @@ export default function AccountSummaryPage() {
 
     setPostingRemit(true)
 
-    const { data, error } = await supabase.rpc('post_cash_remittance', {
+    const { data, error } = await postFinancial('post_cash_remittance', {
       p_staff_code: staff.staff_code,
       p_amount: amount,
       p_bank_name: bankName,
@@ -288,7 +290,7 @@ export default function AccountSummaryPage() {
 
     setPostingFee(true)
 
-    const { data, error } = await supabase.rpc('post_fee', {
+    const { data, error } = await postFinancial('post_fee', {
       p_staff_code: staff.staff_code,
       p_fee_type: feeType,
       p_amount: amount,
