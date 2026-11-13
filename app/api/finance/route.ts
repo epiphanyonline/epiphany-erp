@@ -14,6 +14,11 @@ const allowedActions = new Set([
   'create_disbursement_schedule_batch', 'update_disbursement_schedule_line',
   'add_disbursement_schedule_line', 'remove_disbursement_schedule_line',
   'submit_disbursement_schedule_batch', 'delete_disbursement_schedule_batch',
+  'approve_disbursement_schedule_line', 'decline_disbursement_schedule_line',
+  'bulk_post_loan_upload', 'register_bulk_upload_member', 'retry_bulk_upload_row',
+  'resolve_bulk_upload_exception', 'ignore_bulk_upload_exception',
+  'bulk_register_members_upload', 'register_bulk_membership_row',
+  'admin_supervisor_update_member_details', 'delete_duplicate_member',
 ])
 
 export async function POST(request: Request) {
