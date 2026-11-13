@@ -25,7 +25,7 @@ export async function POST(request: Request) {
   if (!isSameOrigin(request)) {
     return NextResponse.json({ error: 'Cross-site requests are not allowed.' }, { status: 403 })
   }
-  if (Number(request.headers.get('content-length') || 0) > 16384) {
+  if (Number(request.headers.get('content-length') || 0) > 2 * 1024 * 1024) {
     return NextResponse.json({ error: 'Request too large.' }, { status: 413 })
   }
   const cookieStore = await cookies()
