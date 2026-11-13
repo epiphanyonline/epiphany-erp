@@ -1,5 +1,7 @@
 'use client'
 
+import { postFinancial } from '@/lib/financial-post'
+
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useCurrentStaff } from '../../lib/useCurrentStaff'
@@ -110,7 +112,7 @@ export default function DailyClosurePage() {
       return
     }
 
-    const { data, error } = await supabase.rpc('close_staff_day', {
+    const { data, error } = await postFinancial('close_staff_day', {
       p_staff_code: staffCode.trim(),
       p_business_date: businessDate,
       p_opening_balance: numericOpening,
