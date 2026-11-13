@@ -82,66 +82,36 @@ export default function OverdueDashboardPage() {
     async function loadOverdueData() {
       setLoading(true)
 
-      const { data: loansData, error: loansError } = await supabase
-        .from('loan_accounts')
-        .select(
-          'member_id, principal_amount, outstanding_balance, tenure_days, expected_daily_amount, disbursed_at, due_date, status'
-        )
-        .gt('outstanding_balance', 0)
-        .order('due_date', { ascending: true })
-
-      console.log('loansData:', loansData)
-      console.log('loansError:', loansError)
-
-      if (!loansData || loansError) {
-        setRows([])
-        setLoading(false)
-        return
-      }
-
-      const overdueLoans = (loansData as Loan[]).filter(
-        (loan) => getDisplayLoanStatus(loan) === 'OVERDUE'
-      )
-
-      if (!overdueLoans.length) {
-        setRows([])
-        setLoading(false)
-        return
-      }
-
-      const memberIds = [...new Set(overdueLoans.map((loan) => loan.member_id))]
-
-      const { data: membersData, error: membersError } = await supabase
-        .from('members')
-        .select('id, member_code, full_name')
-        .in('id', memberIds)
-
-      console.log('membersData:', membersData)
-      console.log('membersError:', membersError)
-
-      const memberMap = new Map<string, CoreMember>()
-      ;(membersData as CoreMember[] | null)?.forEach((member) => {
-        memberMap.set(member.id, member)
+      const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Africa/Lagos' })
+      const { data, error } = await supabase.rpc('epiphany_collection_report', {
+        p_date_from: today,
+        p_date_to: today,
+        p_park_id: null,
       })
 
-      const mergedRows: OverdueRow[] = overdueLoans.map((loan) => {
-        const member = memberMap.get(loan.member_id)
+      if (error) {
+        console.error('Unable to load working-day overdue report', error)
+        setRows([])
+        setLoading(false)
+        return
+      }
 
-        return {
+      const mergedRows: OverdueRow[] = ((data || []) as any[])
+        .filter((loan) => loan.display_status === 'OVERDUE')
+        .map((loan) => ({
           member_id: loan.member_id,
-          member_code: member?.member_code || '-',
-          member_name: member?.full_name || 'Unknown Member',
+          member_code: loan.member_code || '-',
+          member_name: loan.member_name || 'Unknown Member',
           principal_amount: Number(loan.principal_amount || 0),
           outstanding_balance: Number(loan.outstanding_balance || 0),
-          expected_daily_amount: Number(loan.expected_daily_amount || 0),
+          expected_daily_amount: Number(loan.expected_total_for_range || 0),
           tenure_days: Number(loan.tenure_days || 0),
           disbursed_at: loan.disbursed_at,
           due_date: loan.due_date,
-          status: loan.status,
+          status: loan.loan_status,
           display_status: 'OVERDUE',
-          days_overdue: getDaysOverdue(loan.due_date),
-        }
-      })
+          days_overdue: Number(loan.working_days_overdue || 0),
+        }))
 
       setRows(mergedRows)
       setLoading(false)
@@ -207,7 +177,7 @@ export default function OverdueDashboardPage() {
           </div>
 
           <div style={styles.statCard}>
-            <p style={styles.statLabel}>Daily Expected</p>
+            <p style={styles.statLabel}>Expected Today (Working Days)</p>
             <h2 style={styles.statValue}>
               {formatMoney(totals.totalDailyExpected)}
             </h2>
@@ -273,7 +243,7 @@ export default function OverdueDashboardPage() {
                       </div>
 
                       <div style={styles.metricItem}>
-                        <p style={styles.metricLabel}>Days Overdue</p>
+                        <p style={styles.metricLabel}>Working Days Overdue</p>
                         <p style={{ ...styles.metricValue, color: '#b42318' }}>
                           {row.days_overdue}
                         </p>
@@ -299,7 +269,7 @@ export default function OverdueDashboardPage() {
                         <th style={styles.th}>Outstanding</th>
                         <th style={styles.th}>Daily Expected</th>
                         <th style={styles.th}>Due Date</th>
-                        <th style={styles.th}>Days Overdue</th>
+                        <th style={styles.th}>Working Days Overdue</th>
                         <th style={styles.th}>Status</th>
                       </tr>
                     </thead>
