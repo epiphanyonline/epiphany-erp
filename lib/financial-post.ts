@@ -10,7 +10,7 @@ type FinancialPostResult<T> = {
  * The browser never receives the HttpOnly staff session token, and the server
  * cannot post until the database has verified that session.
  */
-export async function postFinancial<T = unknown>(
+export async function postFinancial<T = any>(
   action: string,
   args: Record<string, unknown>
 ): Promise<FinancialPostResult<T>> {
