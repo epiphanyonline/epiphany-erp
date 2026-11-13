@@ -1,5 +1,7 @@
 'use client'
 
+import { postFinancial } from '@/lib/financial-post'
+
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useCurrentStaff } from '../../lib/useCurrentStaff'
@@ -213,7 +215,7 @@ export default function LoanDisbursementPage() {
       return
     }
 
-    const { data, error } = await supabase.rpc('post_loan_disbursement', {
+    const { data, error } = await postFinancial('post_loan_disbursement', {
       p_member_code: selectedMember.member_code,
       p_principal_amount: numericPrincipal,
       p_tenure_days: numericTenure,
