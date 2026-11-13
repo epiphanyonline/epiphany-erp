@@ -1,5 +1,7 @@
 'use client'
 
+import { postFinancial } from '@/lib/financial-post'
+
 import { ChangeEvent, useEffect, useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { supabase } from '../../lib/supabase'
@@ -244,7 +246,7 @@ export default function BulkMembershipPage() {
       park: row.park,
     }))
 
-    const { data, error } = await supabase.rpc('bulk_register_members_upload', {
+    const { data, error } = await postFinancial('bulk_register_members_upload', {
       p_requesting_staff_code: staff.staff_code,
       p_rows: payload,
     })
@@ -306,7 +308,7 @@ export default function BulkMembershipPage() {
       message: '',
     }))
 
-    const { data, error } = await supabase.rpc('register_bulk_membership_row', {
+    const { data, error } = await postFinancial('register_bulk_membership_row', {
       p_requesting_staff_code: staff.staff_code,
       p_full_name: registerState.fullName,
       p_phone: registerState.phone,
