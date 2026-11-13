@@ -1,5 +1,7 @@
 'use client'
 
+import { postFinancial } from '@/lib/financial-post'
+
 import { ChangeEvent, useEffect, useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { supabase } from '../../lib/supabase'
@@ -278,7 +280,7 @@ export default function BulkUploadPage() {
       park: row.park,
     }))
 
-    const { data, error } = await supabase.rpc('bulk_post_loan_upload', {
+    const { data, error } = await postFinancial('bulk_post_loan_upload', {
   p_requesting_staff_code: staff.staff_code,
   p_business_date: businessDate,
   p_tenure_days: tenure,
@@ -344,7 +346,7 @@ export default function BulkUploadPage() {
       message: '',
     }))
 
-    const { data, error } = await supabase.rpc('register_bulk_upload_member', {
+    const { data, error } = await postFinancial('register_bulk_upload_member', {
       p_requesting_staff_code: staff.staff_code,
       p_full_name: registerState.fullName,
       p_phone: registerState.phone,
@@ -393,7 +395,7 @@ export default function BulkUploadPage() {
   setErrorText('')
   setSuccessText('Retrying selected row...')
 
-  const { data, error } = await supabase.rpc('retry_bulk_upload_row', {
+  const { data, error } = await postFinancial('retry_bulk_upload_row', {
     p_requesting_staff_code: staff.staff_code,
     p_business_date: businessDate,
     p_tenure_days: tenure,
