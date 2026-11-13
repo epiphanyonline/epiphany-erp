@@ -27,6 +27,13 @@ export function getSession(): StaffSession | null {
 }
 
 export function clearSession() {
+  // Revoke the server-side token and clear its HttpOnly cookie.
+  // Local UI state is cleared immediately; expiry remains a fallback if offline.
+  void fetch('/api/staff-logout', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+  }).catch(() => undefined)
   localStorage.removeItem(SESSION_KEY)
   localStorage.removeItem('epiphany_staff_code')
   localStorage.removeItem('epiphany_staff_profile')
