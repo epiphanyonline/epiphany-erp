@@ -1,5 +1,7 @@
 'use client'
 
+import { postFinancial } from '@/lib/financial-post'
+
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../../lib/supabase'
 
@@ -229,7 +231,7 @@ const [balanceLoading, setBalanceLoading] = useState(false)
       return
     }
 
-    const { data, error } = await supabase.rpc('post_savings_withdrawal', {
+    const { data, error } = await postFinancial('post_savings_withdrawal', {
       p_member_code: selectedMember.member_code,
       p_account_type: accountType,
       p_amount: numericAmount,
