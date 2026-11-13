@@ -55,8 +55,7 @@ type ParkRow = {
 /* ---------------- HELPERS ---------------- */
 
 function getTodayDateString() {
-  const d = new Date()
-  return d.toISOString().split('T')[0]
+  return new Date().toLocaleDateString('sv-SE', { timeZone: 'Africa/Lagos' })
 }
 
 function isOverdue(loan: Loan) {
@@ -111,72 +110,58 @@ export default function SupervisorDashboardPage() {
       setLoading(true)
       const today = getTodayDateString()
 
-      const { data: parks } = await supabase.from('parks').select('*')
-      const { data: members } = await supabase.from('members').select('*')
-      const { data: loans } = await supabase
-        .from('loan_accounts')
-        .select('*')
-        .gt('outstanding_balance', 0)
+      const [{ data: parks, error: parksError }, { data: members, error: membersError },
+        { data: collectionData, error: collectionError },
+        { data: staffData, error: staffError }] = await Promise.all([
+        supabase.from('parks').select('id, name'),
+        supabase.from('members').select('id, main_park_id'),
+        supabase.rpc('epiphany_collection_report', {
+          p_date_from: today,
+          p_date_to: today,
+          p_park_id: null,
+        }),
+        supabase.from('staff').select('id, staff_code, full_name, role, last_active, is_active')
+          .eq('is_active', true),
+      ])
 
-      const loanIds = loans?.map((l) => l.id) || []
+      if (parksError || membersError || collectionError || staffError) {
+        console.error('Supervisor report failed', parksError || membersError || collectionError || staffError)
+        setRows([])
+        setLoading(false)
+        return
+      }
 
-      const { data: tx } = await supabase
-        .from('transactions')
-        .select('*')
-        .eq('tx_type', 'LOAN_REPAYMENT')
-        .eq('business_date', today)
-        .in('loan_account_id', loanIds.length ? loanIds : ['000'])
-
-      const { data: staffData } = await supabase
-        .from('staff')
-        .select('*')
-        .eq('is_active', true)
-
-      const repaymentMap = new Map<string, number>()
-      tx?.forEach((t: Transaction) => {
-        if (!t.loan_account_id) return
-        repaymentMap.set(
-          t.loan_account_id,
-          (repaymentMap.get(t.loan_account_id) || 0) + t.amount
-        )
+      const loansByPark = new Map<string, any[]>()
+      ;(collectionData || []).forEach((loan: any) => {
+        const bucket = loansByPark.get(loan.park_id) || []
+        bucket.push(loan)
+        loansByPark.set(loan.park_id, bucket)
       })
 
-      const result: ParkRow[] =
-        parks?.map((park: Park) => {
-          const parkMembers = members?.filter(
-            (m: Member) => m.main_park_id === park.id
-          ) || []
+      const result: ParkRow[] = (parks || []).map((park: Park) => {
+        const parkLoans = loansByPark.get(park.id) || []
+        const parkMembers = (members || []).filter((m: Member) => m.main_park_id === park.id)
+        const expected = parkLoans.reduce(
+          (sum, loan) => sum + Number(loan.expected_total_for_range || 0), 0
+        )
+        const actual = parkLoans.reduce(
+          (sum, loan) => sum + Number(loan.actual_paid_for_range || 0), 0
+        )
 
-          const ids = new Set(parkMembers.map((m) => m.id))
-
-          const parkLoans =
-            loans?.filter((l: Loan) => ids.has(l.member_id)) || []
-
-          const expected = parkLoans.reduce(
-            (s, l) => s + Number(l.expected_daily_amount || 0),
-            0
-          )
-
-          const actual = parkLoans.reduce(
-            (s, l) => s + Number(repaymentMap.get(l.id) || 0),
-            0
-          )
-
-          return {
-            park_id: park.id,
-            park_name: park.name,
-            members_count: parkMembers.length,
-            active_loans_count: parkLoans.length,
-            overdue_loans_count: parkLoans.filter(isOverdue).length,
-            total_exposure: parkLoans.reduce(
-              (s, l) => s + Number(l.outstanding_balance || 0),
-              0
-            ),
-            expected_today: expected,
-            actual_today: actual,
-            variance_today: actual - expected,
-          }
-        }) || []
+        return {
+          park_id: park.id,
+          park_name: park.name,
+          members_count: parkMembers.length,
+          active_loans_count: parkLoans.length,
+          overdue_loans_count: parkLoans.filter((loan) => loan.display_status === 'OVERDUE').length,
+          total_exposure: parkLoans.reduce(
+            (sum, loan) => sum + Number(loan.outstanding_balance || 0), 0
+          ),
+          expected_today: expected,
+          actual_today: actual,
+          variance_today: actual - expected,
+        }
+      })
 
       setRows(result)
       setStaffPresence(staffData || [])
