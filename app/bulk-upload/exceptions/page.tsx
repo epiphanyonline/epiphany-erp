@@ -1,5 +1,7 @@
 'use client'
 
+import { postFinancial } from '@/lib/financial-post'
+
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { supabase } from '../../../lib/supabase'
@@ -164,7 +166,7 @@ export default function BulkUploadExceptionsPage() {
     setErrorText('')
     setSuccessText('')
 
-    const { data, error } = await supabase.rpc('retry_bulk_upload_row', {
+    const { data, error } = await postFinancial('retry_bulk_upload_row', {
       p_requesting_staff_code: staff.staff_code,
       p_business_date: row.business_date,
       p_tenure_days: row.tenure_days,
@@ -214,7 +216,7 @@ export default function BulkUploadExceptionsPage() {
 
     const note = resolveNoteById[row.id] || null
 
-    const { data, error } = await supabase.rpc('resolve_bulk_upload_exception', {
+    const { data, error } = await postFinancial('resolve_bulk_upload_exception', {
       p_exception_id: row.id,
       p_staff_code: staff.staff_code,
       p_resolution_note: note,
@@ -248,7 +250,7 @@ export default function BulkUploadExceptionsPage() {
 
     const note = resolveNoteById[row.id] || null
 
-    const { data, error } = await supabase.rpc('ignore_bulk_upload_exception', {
+    const { data, error } = await postFinancial('ignore_bulk_upload_exception', {
       p_exception_id: row.id,
       p_staff_code: staff.staff_code,
       p_resolution_note: note,
