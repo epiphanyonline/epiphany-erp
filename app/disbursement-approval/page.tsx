@@ -1,5 +1,7 @@
 'use client'
 
+import { postFinancial } from '@/lib/financial-post'
+
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { supabase } from '../../lib/supabase'
@@ -262,7 +264,7 @@ export default function DisbursementApprovalPage() {
     setActionError('')
     setActionMessage('')
 
-    const { data, error } = await supabase.rpc('approve_disbursement_schedule_line', {
+    const { data, error } = await postFinancial('approve_disbursement_schedule_line', {
       p_line_id: selectedLine.id,
       p_supervisor_staff_code: staff.staff_code,
       p_approved_amount: amount,
@@ -309,7 +311,7 @@ export default function DisbursementApprovalPage() {
     setActionError('')
     setActionMessage('')
 
-    const { data, error } = await supabase.rpc('decline_disbursement_schedule_line', {
+    const { data, error } = await postFinancial('decline_disbursement_schedule_line', {
       p_line_id: selectedLine.id,
       p_supervisor_staff_code: staff.staff_code,
       p_decline_reason: declineReason.trim(),
