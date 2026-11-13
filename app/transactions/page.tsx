@@ -1,5 +1,7 @@
 'use client'
 
+import { postFinancial } from '@/lib/financial-post'
+
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useCurrentStaff } from '../../lib/useCurrentStaff'
@@ -844,7 +846,7 @@ const parkSummaryTotals = useMemo(() => {
 
     setReversing(true)
 
-    const { data, error } = await supabase.rpc('reverse_posted_transaction', {
+    const { data, error } = await postFinancial('reverse_posted_transaction', {
       p_tx_ref: selectedTx.tx_ref,
       p_reversal_reason: reverseReason.trim(),
       p_staff_code: staff.staff_code,
