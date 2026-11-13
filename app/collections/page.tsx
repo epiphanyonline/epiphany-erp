@@ -294,6 +294,7 @@ export default function CollectionsPage() {
   const totals = useMemo(() => {
     return {
       loansCount: filteredRows.length,
+      overdueExposure: filteredRows.filter((r) => r.display_status === 'OVERDUE').reduce((sum, r) => sum + r.outstanding_balance, 0),
       expectedTotal: filteredRows.reduce(
         (sum, row) => sum + row.expected_total_for_range,
         0
@@ -394,7 +395,7 @@ export default function CollectionsPage() {
           <div>
             <h1 style={styles.title}>Daily Collection System</h1>
             <p style={styles.subtitle}>
-              Expected vs actual repayment tracking by selected date range
+              Expected scheduled collections vs actual repayments by selected working dates. Arrears are shown separately.
             </p>
           </div>
 
@@ -470,6 +471,10 @@ export default function CollectionsPage() {
             </h2>
           </div>
 
+          <div style={styles.statCard}>
+            <p style={styles.statLabel}>Overdue Recovery Balance</p>
+            <h2 style={styles.statValue}>{formatMoney(totals.overdueExposure)}</h2>
+          </div>
           <div style={styles.statCard}>
             <p style={styles.statLabel}>Overdue Loans</p>
             <h2 style={{ ...styles.statValue, color: '#b42318' }}>
