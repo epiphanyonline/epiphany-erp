@@ -104,7 +104,7 @@ export default function OverdueDashboardPage() {
           member_name: loan.member_name || 'Unknown Member',
           principal_amount: Number(loan.principal_amount || 0),
           outstanding_balance: Number(loan.outstanding_balance || 0),
-          expected_daily_amount: Number(loan.expected_total_for_range || 0),
+          expected_daily_amount: Number(loan.actual_paid_for_range || 0),
           tenure_days: Number(loan.tenure_days || 0),
           disbursed_at: loan.disbursed_at,
           due_date: loan.due_date,
@@ -153,7 +153,7 @@ export default function OverdueDashboardPage() {
         <div style={styles.headerRow}>
           <div>
             <h1 style={styles.title}>Overdue Dashboard</h1>
-            <p style={styles.subtitle}>Risk monitoring for overdue member loans</p>
+            <p style={styles.subtitle}>Outstanding arrears and actual recoveries — scheduled repayment expectations stop at maturity.</p>
           </div>
 
           <button style={styles.backButton} onClick={() => window.history.back()}>
@@ -177,7 +177,7 @@ export default function OverdueDashboardPage() {
           </div>
 
           <div style={styles.statCard}>
-            <p style={styles.statLabel}>Expected Today (Working Days)</p>
+            <p style={styles.statLabel}>Overdue Recoveries Today</p>
             <h2 style={styles.statValue}>
               {formatMoney(totals.totalDailyExpected)}
             </h2>
@@ -236,7 +236,7 @@ export default function OverdueDashboardPage() {
                       </div>
 
                       <div style={styles.metricItem}>
-                        <p style={styles.metricLabel}>Daily Expected</p>
+                        <p style={styles.metricLabel}>Recovered Today</p>
                         <p style={styles.metricValue}>
                           {formatMoney(row.expected_daily_amount)}
                         </p>
@@ -267,7 +267,7 @@ export default function OverdueDashboardPage() {
                         <th style={styles.th}>Member Name</th>
                         <th style={styles.th}>Principal</th>
                         <th style={styles.th}>Outstanding</th>
-                        <th style={styles.th}>Daily Expected</th>
+                        <th style={styles.th}>Recovered Today</th>
                         <th style={styles.th}>Due Date</th>
                         <th style={styles.th}>Working Days Overdue</th>
                         <th style={styles.th}>Status</th>
