@@ -2,7 +2,6 @@
 
 import { saveSession } from "@/lib/auth"
 import { useState } from 'react'
-import { supabase } from '../../lib/supabase'
 
 type LoginResult = {
   success: boolean
@@ -37,35 +36,23 @@ export default function LoginPage() {
       return
     }
 
-    const { data, error } = await supabase.rpc('verify_staff_login', {
-      p_staff_code: staffCode.trim(),
-      p_pin: pin.trim(),
-    })
+    const response = await fetch('/api/staff-login', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      cache: 'no-store',
+      body: JSON.stringify({ staffCode: staffCode.trim(), pin }),
+    }).catch(() => null)
 
-    console.log('login data:', data)
-    console.log('login error:', error)
-
-    if (error) {
-      setErrorText(error.message)
+    const result = response ? await response.json().catch(() => null) as LoginResult | null : null
+    if (!response?.ok || !result?.success) {
+      setErrorText(result?.message || 'Invalid login or login service temporarily unavailable.')
       setLoading(false)
       return
     }
 
-    if (!data || data.length === 0) {
-      setErrorText('No response returned from login function.')
-      setLoading(false)
-      return
-    }
-
-    const result = data[0] as LoginResult
-
-    if (!result.success) {
-      setErrorText(result.message || 'Login failed.')
-      setLoading(false)
-      return
-    }
-localStorage.removeItem('epiphany_staff_code')
-localStorage.removeItem('epiphany_staff_profile')
+    localStorage.removeItem('epiphany_staff_code')
+    localStorage.removeItem('epiphany_staff_profile')
 
     saveSession({
       staff_id: result.staff_id || '',
