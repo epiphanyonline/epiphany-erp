@@ -1,5 +1,7 @@
 'use client'
 
+import { postFinancial } from '@/lib/financial-post'
+
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../../lib/supabase'
 import { useCurrentStaff } from '../../../lib/useCurrentStaff'
@@ -261,7 +263,7 @@ export default function SavingsDepositPage() {
       return
     }
 
-    const { data, error } = await supabase.rpc('post_savings_deposit', {
+    const { data, error } = await postFinancial('post_savings_deposit', {
       p_member_code: selectedMember.member_code,
       p_account_type: accountType,
       p_amount: numericAmount,
