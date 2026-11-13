@@ -140,7 +140,7 @@ export default function SupervisorDashboardPage() {
 
       const result: ParkRow[] = (parks || []).map((park: Park) => {
         const parkLoans = loansByPark.get(park.id) || []
-        const parkMembers = (members || []).filter((m: Member) => m.main_park_id === park.id)
+        const parkMembers = (members || []).filter((m) => m.main_park_id === park.id)
         const expected = parkLoans.reduce(
           (sum, loan) => sum + Number(loan.expected_total_for_range || 0), 0
         )
