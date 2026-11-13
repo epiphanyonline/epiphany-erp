@@ -155,7 +155,8 @@ export default function RootLayout({
       <meta name="apple-mobile-web-app-title" content="Epiphany ERP" />
       <meta name="apple-mobile-web-app-status-bar-style" content="default" />
       <link rel="manifest" href="/manifest.json" />
-      <link rel="apple-touch-icon" href="/icon-192.png" />
+      <link rel="icon" type="image/png" href="/logo.png?v=20261113" />
+      <link rel="apple-touch-icon" href="/icons/icon-192.png" />
     </head>
 
     <body style={styles.body}>
