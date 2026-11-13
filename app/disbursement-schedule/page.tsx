@@ -1,5 +1,7 @@
 'use client'
 
+import { postFinancial } from '@/lib/financial-post'
+
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { supabase } from '../../lib/supabase'
@@ -380,7 +382,7 @@ export default function DisbursementSchedulePage() {
     setActionError('')
     setActionMessage('')
 
-    const { data, error } = await supabase.rpc('create_disbursement_schedule_batch', {
+    const { data, error } = await postFinancial('create_disbursement_schedule_batch', {
       p_staff_code: staff.staff_code,
       p_business_date: newBatchDate,
     })
@@ -427,7 +429,7 @@ export default function DisbursementSchedulePage() {
     }
 
     if (editingLineId) {
-      const { data, error } = await supabase.rpc('update_disbursement_schedule_line', {
+      const { data, error } = await postFinancial('update_disbursement_schedule_line', {
         p_line_id: editingLineId,
         p_staff_code: staff.staff_code,
         p_member_code: selectedMember.member_code,
@@ -452,7 +454,7 @@ export default function DisbursementSchedulePage() {
 
       setActionMessage(result.message || 'Schedule line updated successfully.')
     } else {
-      const { data, error } = await supabase.rpc('add_disbursement_schedule_line', {
+      const { data, error } = await postFinancial('add_disbursement_schedule_line', {
         p_batch_id: selectedBatch.id,
         p_staff_code: staff.staff_code,
         p_member_code: selectedMember.member_code,
@@ -496,7 +498,7 @@ export default function DisbursementSchedulePage() {
     setActionError('')
     setActionMessage('')
 
-    const { data, error } = await supabase.rpc('remove_disbursement_schedule_line', {
+    const { data, error } = await postFinancial('remove_disbursement_schedule_line', {
       p_line_id: line.id,
       p_staff_code: staff.staff_code,
     })
@@ -538,7 +540,7 @@ export default function DisbursementSchedulePage() {
     setActionError('')
     setActionMessage('')
 
-    const { data, error } = await supabase.rpc('submit_disbursement_schedule_batch', {
+    const { data, error } = await postFinancial('submit_disbursement_schedule_batch', {
       p_batch_id: selectedBatch.id,
       p_staff_code: staff.staff_code,
     })
@@ -576,7 +578,7 @@ export default function DisbursementSchedulePage() {
 
     const deletingId = selectedBatch.id
 
-    const { data, error } = await supabase.rpc('delete_disbursement_schedule_batch', {
+    const { data, error } = await postFinancial('delete_disbursement_schedule_batch', {
       p_batch_id: deletingId,
       p_staff_code: staff.staff_code,
     })
