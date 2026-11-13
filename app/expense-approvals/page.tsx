@@ -1,5 +1,7 @@
 'use client'
 
+import { postFinancial } from '@/lib/financial-post'
+
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
@@ -103,8 +105,7 @@ export default function ExpenseApprovalsPage() {
     setError('')
     setSuccess('')
 
-    const { data, error } = await supabase.rpc(
-      'approve_expense_and_post_accounting',
+    const { data, error } = await postFinancial('approve_expense_and_post_accounting',
       {
         p_transaction_id: transactionId,
         p_approved_by: staff.id,
