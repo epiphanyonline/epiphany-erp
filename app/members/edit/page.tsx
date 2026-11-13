@@ -1,5 +1,7 @@
 'use client'
 
+import { postFinancial } from '@/lib/financial-post'
+
 import { useEffect, useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { supabase } from '../../../lib/supabase'
@@ -191,7 +193,7 @@ export default function EditMembersPage() {
     setErrorText('')
     setSuccessText('')
 
-    const { data, error } = await supabase.rpc('admin_supervisor_update_member_details', {
+    const { data, error } = await postFinancial('admin_supervisor_update_member_details', {
       p_requesting_staff_code: staff.staff_code,
       p_member_id: selectedMember.id,
       p_full_name: fullName,
@@ -262,7 +264,7 @@ export default function EditMembersPage() {
     try {
       setDeletingMemberId(member.id)
 
-      const { data, error } = await supabase.rpc('delete_duplicate_member', {
+      const { data, error } = await postFinancial('delete_duplicate_member', {
         p_requesting_staff_code: staff.staff_code,
         p_member_id: member.id,
         p_login_pin: pin,
