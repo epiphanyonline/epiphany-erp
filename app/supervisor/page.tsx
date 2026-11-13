@@ -46,6 +46,8 @@ type ParkRow = {
   members_count: number
   active_loans_count: number
   overdue_loans_count: number
+  overdue_exposure: number
+  overdue_recovered_today: number
   total_exposure: number
   expected_today: number
   actual_today: number
@@ -154,6 +156,12 @@ export default function SupervisorDashboardPage() {
           members_count: parkMembers.length,
           active_loans_count: parkLoans.length,
           overdue_loans_count: parkLoans.filter((loan) => loan.display_status === 'OVERDUE').length,
+          overdue_exposure: parkLoans
+            .filter((loan) => loan.display_status === 'OVERDUE')
+            .reduce((sum, loan) => sum + Number(loan.outstanding_balance || 0), 0),
+          overdue_recovered_today: parkLoans
+            .filter((loan) => loan.display_status === 'OVERDUE')
+            .reduce((sum, loan) => sum + Number(loan.actual_paid_for_range || 0), 0),
           total_exposure: parkLoans.reduce(
             (sum, loan) => sum + Number(loan.outstanding_balance || 0), 0
           ),
@@ -185,6 +193,7 @@ export default function SupervisorDashboardPage() {
     <main style={styles.page}>
       <div style={styles.container}>
         <h1 style={styles.title}>Supervisor Dashboard</h1>
+        <p>Scheduled collections exclude arrears after maturity. Overdue exposure and recoveries are shown separately.</p>
 
         {/* SEARCH */}
         <input
@@ -207,6 +216,8 @@ export default function SupervisorDashboardPage() {
                   Overdue: {row.overdue_loans_count}
                 </p>
                 <p>Exposure: {money(row.total_exposure)}</p>
+                <p>Overdue Exposure: {money(row.overdue_exposure)}</p>
+                <p>Overdue Recovered: {money(row.overdue_recovered_today)}</p>
                 <p>Expected: {money(row.expected_today)}</p>
                 <p>Actual: {money(row.actual_today)}</p>
               </div>
