@@ -121,6 +121,13 @@ export default function HomePage() {
       accent: '#6a1b9a',
     },
     {
+      title: 'Accounting Books',
+      description: 'Password-protected financial statements and accounting reports.',
+      href: '/books',
+      show: canUseSupervisorPages,
+      accent: '#1b7a68',
+    },
+    {
       title: 'Transaction History',
       description: 'View and filter previous posted transactions.',
       href: '/transactions',
