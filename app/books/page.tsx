@@ -52,7 +52,9 @@ export default function BooksPage() {
     finally { setLoading(false) }
   }, [from,to])
 
-  useEffect(() => { if(access && !books && !loading) void load() }, [access,books,loading,load])
+  useEffect(() => { if(access) void load() // only on successful unlock/session restoration
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [access])
 
   async function unlock(e: React.FormEvent) {
     e.preventDefault()
