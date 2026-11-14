@@ -531,7 +531,7 @@ export default function CollectionsPage() {
                 </table>
               </div>
             ) : (
-              <p style={styles.noteText}>No park summary available.</p>
+              <p style={styles.noteText}>{errorText ? 'Collection report could not load. Please retry.' : 'No park summary available.'}</p>
             )}
           </section>
         ) : null}
@@ -541,7 +541,7 @@ export default function CollectionsPage() {
 
           {loading ? (
             <p style={styles.noteText}>Loading collections...</p>
-          ) : !filteredRows.length ? (
+          ) : errorText ? null : !filteredRows.length ? (
             <p style={styles.noteText}>No collection records found.</p>
           ) : (
             <>
