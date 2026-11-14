@@ -48,11 +48,6 @@ export async function POST(request: NextRequest) {
   const response = NextResponse.json({ authenticated: true }, { headers })
   response.cookies.set(BOOKS_COOKIE_NAME, token, {
     httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'strict',
-    path: '/books', maxAge: BOOKS_TTL,
-  })
-  // Path /books cookie is not sent to /api/books; use root for the report service.
-  response.cookies.set(BOOKS_COOKIE_NAME, token, {
-    httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'strict',
     path: '/', maxAge: BOOKS_TTL,
   })
   return response
