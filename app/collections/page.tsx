@@ -45,7 +45,7 @@ type CollectionRow = {
   missed_count: number
   partial_count: number
   paid_count: number
-  display_status: 'PAID' | 'PARTIAL' | 'MISSED' | 'OVERDUE' | 'NO COLLECTION DUE'
+  display_status: 'PAID' | 'PARTIAL' | 'MISSED' | 'OVERDUE' | 'NO COLLECTION DUE' | 'DUE TODAY' | 'UPCOMING'
 }
 
 type ParkSummaryRow = {
@@ -570,6 +570,10 @@ export default function CollectionsPage() {
                             ? styles.statusPartial
                             : row.display_status === 'OVERDUE'
                             ? styles.statusOverdue
+                            : row.display_status === 'DUE TODAY'
+                            ? styles.statusDueToday
+                            : row.display_status === 'UPCOMING' || row.display_status === 'NO COLLECTION DUE'
+                            ? styles.statusNoDue
                             : styles.statusMissed),
                         }}
                       >
@@ -691,6 +695,10 @@ export default function CollectionsPage() {
                                   ? styles.statusPartial
                                   : row.display_status === 'OVERDUE'
                                   ? styles.statusOverdue
+                                  : row.display_status === 'DUE TODAY'
+                                  ? styles.statusDueToday
+                                  : row.display_status === 'UPCOMING' || row.display_status === 'NO COLLECTION DUE'
+                                  ? styles.statusNoDue
                                   : styles.statusMissed),
                               }}
                             >
@@ -965,6 +973,14 @@ const styles: Record<string, React.CSSProperties> = {
   statusMissed: {
     background: '#fef3f2',
     color: '#b42318',
+  },
+  statusDueToday: {
+    background: '#fff8e1',
+    color: '#995b00',
+  },
+  statusNoDue: {
+    background: '#eef2f6',
+    color: '#475467',
   },
   statusOverdue: {
     background: '#fef3f2',
