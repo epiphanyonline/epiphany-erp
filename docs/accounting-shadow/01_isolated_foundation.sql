@@ -151,7 +151,7 @@ select a.code,a.name,a.kind,
        coalesce(sum(l.debit-l.credit),0)::numeric(20,2) net_debit
 from accounting_shadow.accounts a
 left join accounting_shadow.lines l on a.id=l.account_id
-left join accounting_shadow.events e on e.id=l.event_id and e.status='POSTED'
+  and exists (select 1 from accounting_shadow.events e where e.id=l.event_id and e.status='POSTED')
 group by a.code,a.name,a.kind;
 -- Objects remain private: no roles granted access, no job or trigger installed.
 commit;
