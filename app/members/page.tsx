@@ -32,6 +32,8 @@ type StaffScopeRow = {
 type DirectoryTotals = {
   total_clients: number
   total_savings: number
+  regular_savings: number
+  compulsory_savings: number
   total_loan_outstanding: number
   total_net_position: number
 }
@@ -72,6 +74,8 @@ export default function MembersPage() {
   const [directoryTotals, setDirectoryTotals] = useState<DirectoryTotals>({
   total_clients: 0,
   total_savings: 0,
+  regular_savings: 0,
+  compulsory_savings: 0,
   total_loan_outstanding: 0,
   total_net_position: 0,
 })
@@ -193,22 +197,31 @@ export default function MembersPage() {
       ? selectedPark
       : null
 
-  const { data, error } = await supabase.rpc('get_member_directory_totals', {
+  const params = {
     p_search: search || null,
     p_park_id: parkFilter,
     p_status: selectedStatus === 'ALL' ? null : selectedStatus,
-  })
+  }
 
-  if (error) {
-    console.error(error)
+  const [{ data, error }, { data: savingsData, error: savingsError }] = await Promise.all([
+    supabase.rpc('get_member_directory_totals', params),
+    supabase.rpc('get_member_directory_savings_breakdown', params),
+  ])
+
+
+  if (error || savingsError) {
+    console.error(error || savingsError)
     return
   }
 
   const totals = data?.[0]
+  const savings = savingsData?.[0]
 
   setDirectoryTotals({
     total_clients: Number(totals?.total_clients || 0),
     total_savings: Number(totals?.total_savings || 0),
+    regular_savings: Number(savings?.regular_savings || 0),
+    compulsory_savings: Number(savings?.compulsory_savings || 0),
     total_loan_outstanding: Number(totals?.total_loan_outstanding || 0),
     total_net_position: Number(totals?.total_net_position || 0),
   })
@@ -356,6 +369,8 @@ useEffect(() => {
   return {
     memberCount: directoryTotals.total_clients,
     totalSavings: directoryTotals.total_savings,
+    regularSavings: directoryTotals.regular_savings,
+    compulsorySavings: directoryTotals.compulsory_savings,
     totalLoanOutstanding: directoryTotals.total_loan_outstanding,
     totalNetPosition: directoryTotals.total_net_position,
   }
@@ -502,8 +517,13 @@ useEffect(() => {
           </div>
 
           <div style={styles.statCard}>
-            <p style={styles.statLabel}>Savings Balance</p>
-            <h2 style={styles.statValue}>{money(totals.totalSavings)}</h2>
+            <p style={styles.statLabel}>Regular Savings</p>
+            <h2 style={styles.statValue}>{money(totals.regularSavings)}</h2>
+          </div>
+
+          <div style={styles.statCard}>
+            <p style={styles.statLabel}>Compulsory Savings</p>
+            <h2 style={styles.statValue}>{money(totals.compulsorySavings)}</h2>
           </div>
 
           <div style={styles.statCard}>
